@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>com.bitwig.open</groupId>
+  <artifactId>dawproject</artifactId>
+  <versioning>
+    <versions>
+      <version>1-SNAPSHOT</version>
+    </versions>
+    <lastUpdated>20210608215014</lastUpdated>
+  </versioning>
+</metadata>
