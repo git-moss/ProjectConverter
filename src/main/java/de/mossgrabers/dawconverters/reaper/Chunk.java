@@ -27,7 +27,7 @@ public class Chunk extends Node
     }
 
 
-    public Optional<Node> getParameter (String name)
+    public Optional<Node> getChildNode (final String name)
     {
         for (final Node childNode: this.childNodes)
         {

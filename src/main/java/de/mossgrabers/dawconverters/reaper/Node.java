@@ -6,6 +6,7 @@ import java.util.List;
 
 public class Node
 {
+    private String             line;
     private String             name;
     private final List<String> parameters = new ArrayList<> ();
 
@@ -36,5 +37,23 @@ public class Node
     public List<String> getParameters ()
     {
         return this.parameters;
+    }
+
+
+    public void setRaw (final String line)
+    {
+        this.line = line;
+    }
+
+
+    public String getLine ()
+    {
+        return this.line;
+    }
+
+
+    public void setLine (String line)
+    {
+        this.line = line;
     }
 }

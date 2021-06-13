@@ -72,6 +72,7 @@ public class ReaperProject
     private static Node parseNode (final Node node, final String line)
     {
         final List<String> paramParts = parseLine (line);
+        node.setRaw (line);
         node.setName (paramParts.get (0));
         node.addParameters (paramParts.subList (1, paramParts.size ()));
         return node;
@@ -104,7 +105,7 @@ public class ReaperProject
     }
 
 
-    public static String format (Chunk rootChunk)
+    public static String format (final Chunk rootChunk)
     {
         final StringBuilder result = new StringBuilder ();
         formatChunk (result, rootChunk);
@@ -121,7 +122,7 @@ public class ReaperProject
 
         for (final Node node: chunk.getChildNodes ())
         {
-            if (node instanceof Chunk subChunk)
+            if (node instanceof final Chunk subChunk)
                 formatChunk (subResult, subChunk);
             else
                 formatNode (subResult, node);
@@ -135,7 +136,7 @@ public class ReaperProject
     {
         result.append (node.getName ());
 
-        for (String param: node.getParameters ())
+        for (final String param: node.getParameters ())
             result.append (' ').append (param);
 
         result.append (CRLF);
