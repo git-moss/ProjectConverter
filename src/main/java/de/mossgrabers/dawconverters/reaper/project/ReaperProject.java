@@ -1,4 +1,8 @@
-package de.mossgrabers.dawconverters.reaper;
+// Written by Jürgen Moßgraber - mossgrabers.de
+// (c) 2021
+// Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
+
+package de.mossgrabers.dawconverters.reaper.project;
 
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -7,6 +11,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
+/**
+ * Support for parsing and formatting Reaper project files.
+ *
+ * @author J&uuml;rgen Mo&szlig;graber
+ */
 public class ReaperProject
 {
     private static final String  PROJECT_CHUNK  = "REAPER_PROJECT";
@@ -16,12 +25,22 @@ public class ReaperProject
     private static final Object  CRLF           = "\r\n";
 
 
+    /**
+     * Constructor.
+     */
     private ReaperProject ()
     {
         // Intentionally empty
     }
 
 
+    /**
+     * Parses the lines of a Reaper project files into its' parts the so-called chunks.
+     *
+     * @param lines The lines to parse
+     * @return The parsed chunks
+     * @throws ParseException Error during parsing
+     */
     public static Chunk parse (final List<String> lines) throws ParseException
     {
         final boolean isEmpty = lines.isEmpty ();
@@ -34,6 +53,15 @@ public class ReaperProject
     }
 
 
+    /**
+     * Parses a chunk.
+     *
+     * @param chunk The chunk to fill
+     * @param lines The lines to parse from
+     * @param lineIndex The current index of the line to parse
+     * @return The index of the last parsed chunk
+     * @throws ParseException Error during parsing
+     */
     private static int parseChunk (final Chunk chunk, final List<String> lines, final int lineIndex) throws ParseException
     {
         // Parse chunk name and attributes
@@ -47,12 +75,13 @@ public class ReaperProject
             line = lines.get (index).trim ();
 
             // Are we finished with the chunk?
-            if (line.length () == 1 && line.charAt (0) == END_OF_CHUNK)
+            final int length = line.length ();
+            if (length == 1 && line.charAt (0) == END_OF_CHUNK)
                 return index;
 
             // Sub-chunk?
             final Node node;
-            if (line.indexOf (START_OF_CHUNK) != -1)
+            if (length > 0 && line.charAt (0) == START_OF_CHUNK)
             {
                 final Chunk subChunk = new Chunk ();
                 index = parseChunk (subChunk, lines, index);
@@ -69,16 +98,29 @@ public class ReaperProject
     }
 
 
+    /**
+     * Parses a node (name/values pair) of a chunk.
+     *
+     * @param node The node to fill
+     * @param line The line to parse from
+     * @return The node for convenience
+     */
     private static Node parseNode (final Node node, final String line)
     {
         final List<String> paramParts = parseLine (line);
-        node.setRaw (line);
+        node.setLine (line);
         node.setName (paramParts.get (0));
         node.addParameters (paramParts.subList (1, paramParts.size ()));
         return node;
     }
 
 
+    /**
+     * Splits the line of a node into its' parts. Handles single and double quotes.
+     *
+     * @param line The line to split
+     * @return The parts
+     */
     private static List<String> parseLine (final String line)
     {
         final List<String> parts = new ArrayList<> ();
@@ -105,6 +147,12 @@ public class ReaperProject
     }
 
 
+    /**
+     * Formats the root chunk as a Reaper project file.
+     *
+     * @param rootChunk The root chunk
+     * @return The formatted file content
+     */
     public static String format (final Chunk rootChunk)
     {
         final StringBuilder result = new StringBuilder ();
@@ -113,6 +161,12 @@ public class ReaperProject
     }
 
 
+    /**
+     * Format recursively the chunk and all sub-chunks.
+     *
+     * @param result Where to append the formatted sub-chunks
+     * @param chunk The chunk to format
+     */
     private static void formatChunk (final StringBuilder result, final Chunk chunk)
     {
         final StringBuilder line = new StringBuilder ().append (START_OF_CHUNK);
@@ -132,12 +186,24 @@ public class ReaperProject
     }
 
 
+    /**
+     * Format one node (one name/values line).
+     *
+     * @param result Where to add the formatted line
+     * @param node The node to format
+     */
     private static void formatNode (final StringBuilder result, final Node node)
     {
         result.append (node.getName ());
 
         for (final String param: node.getParameters ())
-            result.append (' ').append (param);
+        {
+            result.append (' ');
+            if (param.isBlank () || param.contains (" ") || param.contains ("/"))
+                result.append ('"').append (param).append ('"');
+            else
+                result.append (param);
+        }
 
         result.append (CRLF);
     }

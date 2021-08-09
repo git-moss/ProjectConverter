@@ -1,0 +1,66 @@
+// Written by Jürgen Moßgraber - mossgrabers.de
+// (c) 2021
+// Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
+
+package de.mossgrabers.dawconverters.reaper;
+
+/**
+ * Tags used in Reaper project files.
+ *
+ * @author J&uuml;rgen Mo&szlig;graber
+ */
+public class ReaperTags
+{
+    protected static final String PROJECT_ROOT              = "REAPER_PROJECT";
+    protected static final String PROJECT_TEMPO             = "TEMPO";
+    protected static final String PROJECT_RENDER_METADATA   = "RENDER_METADATA";
+    protected static final String PROJECT_AUTHOR            = "AUTHOR";
+    protected static final String PROJECT_NOTES             = "NOTES";
+    protected static final String PROJECT_TIMELOCKMODE      = "TIMELOCKMODE";
+    protected static final String PROJECT_MARKER            = "MARKER";
+
+    protected static final String METADATA_TAG              = "TAG";
+
+    protected static final String MASTER_COLOR              = "MASTERPEAKCOL";
+    protected static final String MASTER_NUMBER_OF_CHANNELS = "MASTER_NCH";
+    protected static final String MASTER_MUTE_SOLO          = "MASTERMUTESOLO";
+    protected static final String MASTER_VOLUME_PAN         = "MASTER_VOLUME";
+    protected static final String MASTER_CHUNK_FXCHAIN      = "MASTERFXLIST";
+
+    protected static final String CHUNK_TRACK               = "TRACK";
+    protected static final String TRACK_NAME                = "NAME";
+    protected static final String TRACK_COLOR               = "PEAKCOL";
+    protected static final String TRACK_STRUCTURE           = "ISBUS";
+    protected static final String TRACK_NUMBER_OF_CHANNELS  = "NCHAN";
+    protected static final String TRACK_MUTE_SOLO           = "MUTESOLO";
+    protected static final String TRACK_VOLUME_PAN          = "VOLPAN";
+    protected static final String TRACK_AUX_RECEIVE         = "AUXRECV";
+
+    protected static final String CHUNK_ITEM                = "ITEM";
+    protected static final String ITEM_NAME                 = "NAME";
+    protected static final String ITEM_POSITION             = "POSITION";
+    protected static final String ITEM_LENGTH               = "LENGTH";
+    protected static final String ITEM_FADEIN               = "FADEIN";
+    protected static final String ITEM_FADEOUT              = "FADEOUT";
+    protected static final String CHUNK_ITEM_SOURCE         = "SOURCE";
+    protected static final String SOURCE_HASDATA            = "HASDATA";
+    protected static final String SOURCE_FILE               = "FILE";
+
+    protected static final String CHUNK_FXCHAIN             = "FXCHAIN";
+    protected static final String FXCHAIN_BYPASS            = "BYPASS";
+    protected static final String CHUNK_VST                 = "VST";
+
+    protected static final String PLUGIN_VST_2              = "VST";
+    protected static final String PLUGIN_VST_2_INSTRUMENT   = "VSTi";
+    protected static final String PLUGIN_VST_3              = "VST3";
+    protected static final String PLUGIN_VST_3_INSTRUMENT   = "VST3i";
+
+
+    /**
+     * Constructor.
+     */
+    protected ReaperTags ()
+    {
+        // Intentionally empty
+    }
+}
