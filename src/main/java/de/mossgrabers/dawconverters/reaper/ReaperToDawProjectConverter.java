@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021
+// (c) 2021-2022
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.dawconverters.reaper;
@@ -18,6 +18,7 @@ import com.bitwig.dawproject.FolderTrack;
 import com.bitwig.dawproject.Interpolation;
 import com.bitwig.dawproject.Metadata;
 import com.bitwig.dawproject.MixerRole;
+import com.bitwig.dawproject.Parameter;
 import com.bitwig.dawproject.Project;
 import com.bitwig.dawproject.RealParameter;
 import com.bitwig.dawproject.Referencable;
@@ -33,6 +34,7 @@ import com.bitwig.dawproject.device.Device;
 import com.bitwig.dawproject.device.Vst2Plugin;
 import com.bitwig.dawproject.device.Vst3Plugin;
 import com.bitwig.dawproject.timeline.Audio;
+import com.bitwig.dawproject.timeline.BoolPoint;
 import com.bitwig.dawproject.timeline.Clip;
 import com.bitwig.dawproject.timeline.Clips;
 import com.bitwig.dawproject.timeline.IntegerPoint;
@@ -41,11 +43,16 @@ import com.bitwig.dawproject.timeline.Marker;
 import com.bitwig.dawproject.timeline.Markers;
 import com.bitwig.dawproject.timeline.Note;
 import com.bitwig.dawproject.timeline.Notes;
+import com.bitwig.dawproject.timeline.Point;
 import com.bitwig.dawproject.timeline.Points;
+import com.bitwig.dawproject.timeline.RealPoint;
+import com.bitwig.dawproject.timeline.TimeSignaturePoint;
 import com.bitwig.dawproject.timeline.Timebase;
 
 import javax.sound.sampled.AudioFileFormat;
+import javax.sound.sampled.AudioFileFormat.Type;
 import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioFormat.Encoding;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.UnsupportedAudioFileException;
 
@@ -95,10 +102,15 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
     private final Metadata                   metadata         = new Metadata ();
     private final Project                    project          = new Project ();
-    private boolean                          isBeats;
     private final Lanes                      arrangementLanes = new Lanes ();
 
     private final Map<Integer, List<Send>>   sendMapping      = new HashMap<> ();
+    private final Map<Track, Lanes>          trackLanesMap    = new HashMap<> ();
+    private final Map<Send, Chunk>           sendChunkMapping = new HashMap<> ();
+
+    private boolean                          sourceIsBeats;
+    private boolean                          sourceIsEnvelopeBeats;
+    private boolean                          destinationIsBeats;
 
 
     /**
@@ -106,9 +118,11 @@ public class ReaperToDawProjectConverter extends ReaperTags
      *
      * @param sourcePath The path where the source project is located.
      * @param rootChunk The already parsed chunk structure
+     * @param destinationTimebase The time base to use for the destination project, the time base of
+     *            the source project will be used if set to null
      * @throws ParseException Could not parse Reaper project file
      */
-    public ReaperToDawProjectConverter (final File sourcePath, final Chunk rootChunk) throws ParseException
+    public ReaperToDawProjectConverter (final File sourcePath, final Chunk rootChunk, final Timebase destinationTimebase) throws ParseException
     {
         Referencable.resetID ();
 
@@ -120,7 +134,10 @@ public class ReaperToDawProjectConverter extends ReaperTags
         this.project.application.version = parameters.size () > 1 ? parameters.get (1) : "Unknown";
 
         this.convertMetadata (rootChunk);
+
         this.convertArrangement (rootChunk);
+        this.destinationIsBeats = destinationTimebase == null ? this.sourceIsBeats : destinationTimebase == Timebase.beats;
+
         this.convertTransport (rootChunk);
         this.convertMarkers (rootChunk);
         this.convertMaster (rootChunk);
@@ -262,9 +279,17 @@ public class ReaperToDawProjectConverter extends ReaperTags
         this.project.arrangement = arrangement;
         arrangement.content = this.arrangementLanes;
 
-        final Optional<Node> timelockModeNode = rootChunk.getChildNode (PROJECT_TIMELOCKMODE);
+        final Optional<Node> timelockModeNode = rootChunk.getChildNode (PROJECT_TIME_LOCKMODE);
         this.arrangementLanes.timebase = getIntParam (timelockModeNode, 1) == 0 ? Timebase.seconds : Timebase.beats;
-        this.isBeats = this.arrangementLanes.timebase == Timebase.beats;
+        this.sourceIsBeats = this.arrangementLanes.timebase == Timebase.beats;
+
+        final Optional<Node> timelockEnvelopeModeNode = rootChunk.getChildNode (PROJECT_TIME_ENV_LOCKMODE);
+        this.sourceIsEnvelopeBeats = getIntParam (timelockEnvelopeModeNode, 1) == 1;
+
+        // Time values are always in seconds, indicators above seem to be only for visual
+        // information
+        this.sourceIsBeats = false;
+        this.sourceIsEnvelopeBeats = false;
     }
 
 
@@ -281,7 +306,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
         for (final Node node: rootChunk.getChildNodes ())
         {
             // Is it a simple marker?
-            if (!PROJECT_MARKER.equals (node.getName ()) || (getIntParam (node, 3, 0) > 0))
+            if (!PROJECT_MARKER.equals (node.getName ()) || getIntParam (node, 3, 0) > 0)
                 continue;
 
             // If the marker has no name use the index
@@ -290,7 +315,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
                 name = getParam (node, 0, "0");
 
             final Marker marker = new Marker ();
-            marker.time = this.getTimeParam (node, 1, 0);
+            marker.time = this.handleTime (getDoubleParam (node, 1, 0), false);
             marker.name = name;
             final int c = getIntParam (node, 4, 0);
             if (c > 0)
@@ -347,7 +372,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
         final double [] volPan = getDoubleParams (rootChunk.getChildNode (MASTER_VOLUME_PAN), -1);
         if (volPan.length >= 1)
         {
-            masterTrack.volume = createRealParameter (Unit.linear, 0.0, 4.0, volPan[0]);
+            masterTrack.volume = createRealParameter (Unit.linear, 0.0, 1.0, Math.min (1, valueToDB (volPan[0], 0)));
             masterTrack.pan = createRealParameter (Unit.linear, -1.0, 1.0, volPan[1]);
         }
 
@@ -366,7 +391,12 @@ public class ReaperToDawProjectConverter extends ReaperTags
             masterTrack.color = toHexColor (color);
 
         // Convert all FX devices
-        masterTrack.devices = this.convertDevices (rootChunk, MASTER_CHUNK_FXCHAIN);
+        masterTrack.devices = this.convertDevices (masterTrack, rootChunk, MASTER_CHUNK_FXCHAIN);
+
+        final Lanes masterTrackLanes = this.createTrackLanes (masterTrack);
+        this.convertAutomation (masterTrack, rootChunk, MASTER_VOLUME_ENVELOPE, masterTrack.volume, true);
+        this.convertAutomation (masterTrack, rootChunk, MASTER_PANORAMA_ENVELOPE, masterTrack.pan, true);
+        this.convertTempoAutomation (rootChunk, masterTrackLanes);
     }
 
 
@@ -387,7 +417,16 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
         // In the second run assign the collected sends
         for (int i = 0; i < tracks.size (); i++)
-            tracks.get (i).sends = this.sendMapping.get (Integer.valueOf (i));
+        {
+            final Track track = tracks.get (i);
+            track.sends = this.sendMapping.get (Integer.valueOf (i));
+
+            if (track.sends != null)
+            {
+                for (final Send send: track.sends)
+                    this.convertAutomation (track, this.sendChunkMapping.get (send), TRACK_AUX_ENVELOPE, send, true);
+            }
+        }
     }
 
 
@@ -415,19 +454,21 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
         // track.loaded - no loaded state in Reaper
 
-        // Reaper tracks are always hybrid
-        track.timelineRole = new TimelineRole []
-        {
-            TimelineRole.notes,
-            TimelineRole.audio
-        };
-
         final int numberOfChannels = getIntParam (trackChunk.getChildNode (TRACK_NUMBER_OF_CHANNELS), -1);
         track.audioChannels = Integer.valueOf (numberOfChannels > 0 ? numberOfChannels : 2);
 
         // Create and store Sends for assignment in second phase
         final List<Node> auxReceive = trackChunk.getChildNodes (TRACK_AUX_RECEIVE);
-        if (!auxReceive.isEmpty ())
+        if (auxReceive.isEmpty ())
+        {
+            // Reaper tracks are always hybrid
+            track.timelineRole = new TimelineRole []
+            {
+                TimelineRole.notes,
+                TimelineRole.audio
+            };
+        }
+        else
         {
             for (final Node sendNode: auxReceive)
             {
@@ -435,12 +476,20 @@ public class ReaperToDawProjectConverter extends ReaperTags
                 final int mode = getIntParam (sendNode, 1, 0);
                 final double sendVolume = getDoubleParam (sendNode, 2, 1);
 
-                final Send send = Send.create (sendVolume, Unit.linear);
+                final Send send = Send.create (valueToDB (sendVolume, 12), Unit.linear);
+                send.name = "Send";
+                send.min = Double.valueOf (0);
+                send.max = Double.valueOf (1);
                 send.type = mode == 0 ? SendType.post : SendType.pre;
                 send.destination = track;
                 this.sendMapping.computeIfAbsent (Integer.valueOf (trackIndex), key -> new ArrayList<> ()).add (send);
+                this.sendChunkMapping.put (send, trackChunk);
 
-                track.mixerRole = MixerRole.aux;
+                track.mixerRole = MixerRole.returnTrack;
+                track.timelineRole = new TimelineRole []
+                {
+                    TimelineRole.audio
+                };
             }
         }
 
@@ -450,7 +499,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
         final double [] volPan = getDoubleParams (trackChunk.getChildNode (TRACK_VOLUME_PAN), -1);
         if (volPan.length >= 1)
         {
-            track.volume = createRealParameter (Unit.linear, 0.0, 4.0, volPan[0]);
+            track.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDB (volPan[0], 0));
             track.pan = createRealParameter (Unit.linear, -1.0, 1.0, volPan[1]);
         }
 
@@ -508,24 +557,131 @@ public class ReaperToDawProjectConverter extends ReaperTags
             }
         }
 
-        // Convert all FX devices
-        track.devices = this.convertDevices (trackChunk, CHUNK_FXCHAIN);
+        final Lanes trackLanes = this.createTrackLanes (track);
 
-        this.convertItems (track, trackChunk);
+        // Convert all FX devices
+        track.devices = this.convertDevices (track, trackChunk, CHUNK_FXCHAIN);
+
+        this.convertItems (trackLanes, trackChunk);
+        this.convertAutomation (track, trackChunk);
 
         return track;
     }
 
 
     /**
+     * Fill the envelope structure.
+     *
+     * @param track The track to add the media item clips
+     * @param trackChunk The track chunk
+     */
+    private void convertAutomation (final Track track, final Chunk trackChunk)
+    {
+        this.convertAutomation (track, trackChunk, TRACK_VOLUME_ENVELOPE, track.volume, true);
+        this.convertAutomation (track, trackChunk, TRACK_PANORAMA_ENVELOPE, track.pan, true);
+        this.convertAutomation (track, trackChunk, TRACK_MUTE_ENVELOPE, track.mute, false);
+    }
+
+
+    private void convertAutomation (final Track track, final Chunk trackChunk, final String envelopeName, final Parameter parameter, final boolean interpolate)
+    {
+        final Optional<Node> envelopeNode = trackChunk.getChildNode (envelopeName);
+        if (envelopeNode.isPresent () && envelopeNode.get ()instanceof final Chunk envelopeChunk)
+        {
+            final Lanes lanes = this.trackLanesMap.get (track);
+            if (lanes == null)
+                return;
+            final Points envelope = new Points ();
+            lanes.lanes.add (envelope);
+
+            if (interpolate)
+            {
+                envelope.unit = Unit.linear;
+                envelope.interpolation = Interpolation.linear;
+            }
+            else
+                envelope.interpolation = Interpolation.hold;
+
+            envelope.target.parameter = parameter;
+
+            for (final Node pointNode: envelopeChunk.getChildNodes (ENVELOPE_POINT))
+            {
+                final Point point = interpolate ? new RealPoint () : new BoolPoint ();
+                final double timeValue = getDoubleParam (pointNode, 0, 0);
+                point.time = Double.valueOf (this.handleTime (timeValue, true));
+
+                if (interpolate)
+                    ((RealPoint) point).value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
+                else
+                    ((BoolPoint) point).value = Boolean.valueOf (getDoubleParam (pointNode, 1, 0) > 0);
+                envelope.points.add (point);
+            }
+        }
+    }
+
+
+    private void convertTempoAutomation (final Chunk rootChunk, final Lanes masterTrackLanes)
+    {
+        final Optional<Node> envelopeNode = rootChunk.getChildNode (PROJECT_TEMPO_ENVELOPE);
+        if (envelopeNode.isPresent () && envelopeNode.get ()instanceof final Chunk envelopeChunk)
+        {
+            final Points tempoEnvelope = new Points ();
+            masterTrackLanes.lanes.add (tempoEnvelope);
+            tempoEnvelope.unit = Unit.bpm;
+            tempoEnvelope.interpolation = Interpolation.linear;
+            tempoEnvelope.target.parameter = this.project.transport.tempo;
+
+            final Points signatureEnvelope = new Points ();
+            signatureEnvelope.interpolation = Interpolation.hold;
+            signatureEnvelope.target.parameter = this.project.transport.timeSignature;
+
+            for (final Node pointNode: envelopeChunk.getChildNodes (ENVELOPE_POINT))
+            {
+                final RealPoint point = new RealPoint ();
+                final double timeValue = getDoubleParam (pointNode, 0, 0);
+                point.time = Double.valueOf (this.handleTime (timeValue, true));
+                point.value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
+                tempoEnvelope.points.add (point);
+
+                final int signature = getIntParam (pointNode, 3, 0);
+                if (signature > 0)
+                {
+                    final TimeSignaturePoint timeSigPoint = new TimeSignaturePoint ();
+                    timeSigPoint.time = point.time;
+                    timeSigPoint.numerator = Integer.valueOf (signature & 0xFFFF);
+                    timeSigPoint.denominator = Integer.valueOf (signature >> 16 & 0xFFFF);
+                    signatureEnvelope.points.add (timeSigPoint);
+                }
+            }
+
+            if (!signatureEnvelope.points.isEmpty ())
+            {
+                masterTrackLanes.lanes.add (signatureEnvelope);
+
+                // Make sure there is a signature marker at position 0
+                if (signatureEnvelope.points.get (0).time.doubleValue () > 0)
+                {
+                    final TimeSignaturePoint timeSigPoint = new TimeSignaturePoint ();
+                    timeSigPoint.time = Double.valueOf (0);
+                    timeSigPoint.numerator = this.project.transport.timeSignature.numerator;
+                    timeSigPoint.denominator = this.project.transport.timeSignature.denominator;
+                    signatureEnvelope.points.add (0, timeSigPoint);
+                }
+            }
+        }
+    }
+
+
+    /**
      * Fill the devices structure.
      *
+     * @param track The track
      * @param trackChunk The track chunk
-     * @param chunkName The name of the fx list chunk
+     * @param chunkName The name of the FX list chunk
      * @return The list with the parsed devices
      * @throws ParseException Could not parse the track info
      */
-    private List<Device> convertDevices (final Chunk trackChunk, final String chunkName) throws ParseException
+    private List<Device> convertDevices (final Track track, final Chunk trackChunk, final String chunkName) throws ParseException
     {
         final List<Device> devices = new ArrayList<> ();
 
@@ -538,6 +694,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
         {
             boolean bypass = false;
             boolean offline = false;
+            Device device = null;
 
             for (final Node node: fxChainChunk.getChildNodes ())
             {
@@ -551,14 +708,60 @@ public class ReaperToDawProjectConverter extends ReaperTags
                 }
                 else if (CHUNK_VST.equals (nodeName) && node instanceof final Chunk vstChunk)
                 {
-                    final Device device = this.handleFX (vstChunk, bypass, offline);
+                    device = this.handleFX (vstChunk, bypass, offline);
                     if (device != null)
                         devices.add (device);
+                }
+                else if (FXCHAIN_PARAMETER_ENVELOPE.equals (nodeName) && node instanceof final Chunk paramEnvChunk)
+                {
+                    this.createAutomationParameters (track, device, paramEnvChunk);
                 }
             }
         }
 
         return devices;
+    }
+
+
+    private void createAutomationParameters (final Track track, final Device device, final Chunk paramEnvChunk)
+    {
+        final RealParameter param = new RealParameter ();
+
+        String id = getParam (paramEnvChunk, 0, "0");
+        id = id.split (":")[0];
+        int paramID;
+        try
+        {
+            paramID = Integer.parseInt (id);
+        }
+        catch (final NumberFormatException ex)
+        {
+            paramID = 0;
+        }
+
+        param.parameterID = Integer.valueOf (paramID);
+        param.min = Double.valueOf (getDoubleParam (paramEnvChunk, 1, 0));
+        param.max = Double.valueOf (getDoubleParam (paramEnvChunk, 2, 0));
+        param.value = Double.valueOf (getDoubleParam (paramEnvChunk, 3, 0));
+        param.unit = Unit.linear;
+
+        device.automatedParameters.add (param);
+
+        final Lanes lanes = this.trackLanesMap.get (track);
+
+        final Points envelope = new Points ();
+        lanes.lanes.add (envelope);
+        envelope.unit = Unit.linear;
+        envelope.interpolation = Interpolation.linear;
+        envelope.target.parameter = param;
+
+        for (final Node pointNode: paramEnvChunk.getChildNodes (ENVELOPE_POINT))
+        {
+            final RealPoint point = new RealPoint ();
+            point.time = Double.valueOf (getDoubleParam (pointNode, 0, 0));
+            point.value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
+            envelope.points.add (point);
+        }
     }
 
 
@@ -648,8 +851,6 @@ public class ReaperToDawProjectConverter extends ReaperTags
             throw new ParseException ("Could not store plugin state: " + ex.getLocalizedMessage (), 0);
         }
 
-        // device.automatedParameters not supported
-
         return device;
     }
 
@@ -657,21 +858,14 @@ public class ReaperToDawProjectConverter extends ReaperTags
     /**
      * Add the media item clips to the track structure.
      *
-     * @param track The track to add the media item clips
+     * @param trackLanes The lanes of the track to add the media item clips
      * @param trackChunk The track chunk
      * @throws ParseException Could not parse the track info
      */
-    private void convertItems (final Track track, final Chunk trackChunk) throws ParseException
+    private void convertItems (final Lanes trackLanes, final Chunk trackChunk) throws ParseException
     {
-        final Lanes lanes = (Lanes) this.project.arrangement.content;
-        lanes.track = track;
-
-        final Lanes trackLanes = new Lanes ();
-        lanes.lanes.add (trackLanes);
-
-        trackLanes.track = track;
-
         final Clips clips = new Clips ();
+        trackLanes.lanes.add (clips);
 
         for (final Node node: trackChunk.getChildNodes ())
         {
@@ -686,9 +880,16 @@ public class ReaperToDawProjectConverter extends ReaperTags
                     clips.clips.add (clip);
             }
         }
+    }
 
-        if (!clips.clips.isEmpty ())
-            trackLanes.lanes.add (clips);
+
+    private Lanes createTrackLanes (final Track track)
+    {
+        final Lanes trackLanes = new Lanes ();
+        trackLanes.track = track;
+        ((Lanes) this.project.arrangement.content).lanes.add (trackLanes);
+        this.trackLanesMap.put (track, trackLanes);
+        return trackLanes;
     }
 
 
@@ -704,18 +905,18 @@ public class ReaperToDawProjectConverter extends ReaperTags
         final Clip clip = new Clip ();
 
         clip.name = getParam (itemChunk.getChildNode (ITEM_NAME), null);
-        clip.time = this.getTimeParam (itemChunk.getChildNode (ITEM_POSITION), 0);
-        clip.duration = this.getTimeParam (itemChunk.getChildNode (ITEM_LENGTH), 1);
+        clip.time = this.handleTime (getDoubleParam (itemChunk.getChildNode (ITEM_POSITION), 0), false);
+        clip.duration = this.handleTime (getDoubleParam (itemChunk.getChildNode (ITEM_LENGTH), 1), false);
 
         // FADEIN 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
         final int [] fadeInParams = getIntParams (itemChunk.getChildNode (ITEM_FADEIN), 0);
         if (fadeInParams.length > 1 && fadeInParams[1] > 0)
-            clip.fadeInTime = Double.valueOf (this.isBeats ? this.toBeats (fadeInParams[1]) : fadeInParams[1]);
+            clip.fadeInTime = Double.valueOf (this.handleTime (fadeInParams[1], false));
 
         // FADEOUT 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
         final int [] fadeOutParams = getIntParams (itemChunk.getChildNode (ITEM_FADEOUT), 0);
         if (fadeOutParams.length > 1 && fadeOutParams[1] > 0)
-            clip.fadeOutTime = Double.valueOf (this.isBeats ? this.toBeats (fadeOutParams[1]) : fadeOutParams[1]);
+            clip.fadeOutTime = Double.valueOf (this.handleTime (fadeOutParams[1], false));
 
         final Optional<Node> source = itemChunk.getChildNode (CHUNK_ITEM_SOURCE);
         if (source.isEmpty ())
@@ -818,8 +1019,8 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
                     final double position = noteStart.getPosition () / (double) ticksPerQuarterNote;
                     final double length = (midiEvent.getPosition () - noteStart.getPosition ()) / (double) ticksPerQuarterNote;
-                    note.time = Double.valueOf (this.isBeats ? position : this.toTime (position));
-                    note.duration = Double.valueOf (this.isBeats ? length : this.toTime (length));
+                    note.time = Double.valueOf (handleMIDITime (position));
+                    note.duration = Double.valueOf (handleMIDITime (length));
                     note.key = noteStart.getData1 ();
                     note.velocity = Double.valueOf (noteStart.getData2 () / 127.0);
                     // note.releaseVelocity -> information not available
@@ -893,7 +1094,6 @@ public class ReaperToDawProjectConverter extends ReaperTags
         final Audio audio = new Audio ();
         audio.file = new FileReference ();
         audio.file.path = "samples/" + filename;
-        audio.duration = clip.duration;
         audio.algorithm = "raw";
 
         final File sourceFile = new File (this.sourcePath, filename);
@@ -903,6 +1103,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
             final AudioFormat format = audioFileFormat.getFormat ();
             audio.channels = format.getChannels ();
             audio.samplerate = (int) format.getSampleRate ();
+            audio.duration = getDuration (audioFileFormat);
         }
         catch (UnsupportedAudioFileException | IOException ex)
         {
@@ -911,7 +1112,14 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
         this.embeddedFiles.put (sourceFile, audio.file.path);
 
-        clip.content = audio;
+        // Necessary to wrap in another Clips/Clip pair to load it successfully in Bitwig
+        final Clips clips = new Clips ();
+        clip.content = clips;
+        final Clip internalClip = new Clip ();
+        internalClip.time = 0;
+        internalClip.duration = clip.duration;
+        clips.clips.add (internalClip);
+        internalClip.content = audio;
     }
 
 
@@ -930,35 +1138,6 @@ public class ReaperToDawProjectConverter extends ReaperTags
                 return event;
         }
         return null;
-    }
-
-
-    /**
-     * Get the first parameter value of a node as a time.
-     *
-     * @param optionalNode The node from which to get the parameter value
-     * @param defaultValue The value to return if there is no value present
-     * @return The read value of the default value
-     */
-    private double getTimeParam (final Optional<Node> optionalNode, final double defaultValue)
-    {
-        final double value = getDoubleParam (optionalNode, defaultValue);
-        return this.isBeats ? this.toBeats (value) : value;
-    }
-
-
-    /**
-     * Get the first parameter value of a node as a time.
-     *
-     * @param node The node from which to get the parameter value
-     * @param position The index of the parameter
-     * @param defaultValue The value to return if there is no value present
-     * @return The read value of the default value
-     */
-    private double getTimeParam (final Node node, final int position, final double defaultValue)
-    {
-        final double value = getDoubleParam (node, position, defaultValue);
-        return this.isBeats ? this.toBeats (value) : value;
     }
 
 
@@ -1198,7 +1377,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
     private static Points getEnvelopes (final Map<ExpressionType, Map<Integer, Map<Integer, Points>>> midiEnvelopes, final ExpressionType expType, final int channel, final int keyOrCC)
     {
-        final Map<Integer, Map<Integer, Points>> envelopesMap = midiEnvelopes.computeIfAbsent (expType, exp -> new HashMap<Integer, Map<Integer, Points>> ());
+        final Map<Integer, Map<Integer, Points>> envelopesMap = midiEnvelopes.computeIfAbsent (expType, exp -> new HashMap<> ());
         final Integer channelKey = Integer.valueOf (channel);
         final Map<Integer, Points> envelopes = envelopesMap.computeIfAbsent (channelKey, chn -> new HashMap<> ());
         return envelopes.computeIfAbsent (Integer.valueOf (keyOrCC), kcc -> createPoints (channelKey, expType, kcc));
@@ -1241,5 +1420,88 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
         point.value = Integer.valueOf (value);
         points.points.add (point);
+    }
+
+
+    private static double valueToDB (final double x, final double maxLevelDB)
+    {
+        return dBToLinear (reaperValueToDB (x), maxLevelDB);
+    }
+
+
+    private static double reaperValueToDB (final double x)
+    {
+        if (x < 0.0000000298023223876953125)
+            return -150;
+        return Math.max (-150.0, Math.log (x) * 8.6858896380650365530225783783321);
+    }
+
+
+    private static double dBToLinear (final double dBVal, final double maxLevelDB)
+    {
+        return Math.pow (10, (dBVal - maxLevelDB) / 20.0);
+    }
+
+
+    private static long getDuration (final AudioFileFormat audioFileFormat)
+    {
+        final String DURATION = "duration";
+        Long duration = (Long) audioFileFormat.properties ().get (DURATION);
+        // TODO this must be "/ 1000 / 1000" to get seconds!
+        if (duration != null)
+            return duration.longValue () * 1000L * 1000L;
+
+        // and because duration is optional, use a fallback
+        // for uncompressed formats like AIFF and WAVE
+        final AudioFormat format = audioFileFormat.getFormat ();
+        if (format.getEncoding () == Encoding.PCM_SIGNED
+                // make sure we actually have a frame length
+                && audioFileFormat.getFrameLength () != AudioSystem.NOT_SPECIFIED
+                // make sure we actually have a frame rate
+                && format.getFrameRate () != AudioSystem.NOT_SPECIFIED
+                // check if this is WAVE or AIFF, other uncompressed formats may work as well
+                && (audioFileFormat.getType () == Type.WAVE || audioFileFormat.getType () == Type.AIFF))
+        {
+            return (long) (audioFileFormat.getFrameLength () / format.getFrameRate ());
+        }
+
+        return 0;
+    }
+
+
+    /**
+     * Converts time to beats, vice versa or not at all depending on the source and destination time
+     * base.
+     *
+     * @param time The value to convert
+     * @param isEnvelope True if the data is read from an envelope, which might have a different
+     *            time base in Reaper
+     * @return The value matching the destination time base
+     */
+    private double handleTime (final double time, final boolean isEnvelope)
+    {
+        if (isEnvelope)
+        {
+            if (this.sourceIsEnvelopeBeats == this.destinationIsBeats)
+                return time;
+            return this.sourceIsEnvelopeBeats ? this.toTime (time) : this.toBeats (time);
+        }
+
+        if (this.sourceIsBeats == this.destinationIsBeats)
+            return time;
+        return this.sourceIsBeats ? this.toTime (time) : this.toBeats (time);
+    }
+
+
+    /**
+     * Converts beats (MIDI timing is always in beats) to time if necessary depending on the
+     * destination time base.
+     *
+     * @param time The value to convert
+     * @return The value matching the destination time base
+     */
+    private double handleMIDITime (final double time)
+    {
+        return this.destinationIsBeats ? time : this.toTime (time);
     }
 }

@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021
+// (c) 2021-2022
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.dawconverters;
@@ -8,6 +8,8 @@ import de.mossgrabers.dawconverters.reaper.DawProjectToReaperConverter;
 import de.mossgrabers.dawconverters.reaper.ReaperToDawProjectConverter;
 import de.mossgrabers.dawconverters.reaper.project.Chunk;
 import de.mossgrabers.dawconverters.reaper.project.ReaperProject;
+
+import com.bitwig.dawproject.timeline.Timebase;
 
 import java.io.File;
 import java.io.IOException;
@@ -60,11 +62,11 @@ public final class ConvertProject
             {
                 final List<String> lines = Files.readAllLines (inputFile.toPath (), StandardCharsets.UTF_8);
                 final Chunk rootChunk = ReaperProject.parse (lines);
-                new ReaperToDawProjectConverter (sourcePath, rootChunk).saveProject (outputFile);
+                new ReaperToDawProjectConverter (sourcePath, rootChunk, Timebase.beats).saveProject (outputFile);
             }
             else
             {
-                new DawProjectToReaperConverter (inputFile).saveProject (outputFile);
+                new DawProjectToReaperConverter (inputFile, Timebase.beats).saveProject (outputFile);
             }
             System.out.println ("Done.");
         }

@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021
+// (c) 2021-2022
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.dawconverters.reaper.project;
@@ -349,7 +349,8 @@ public class VstChunkHandler
         final Vst3Preset preset = new Vst3Preset ();
         preset.read (in);
 
-        // Still no idea what is used here by Reaper
+        // TODO Still no idea what is used here by Reaper, could be retrieved from Reaper VST cache
+        // file when integrated in DBM
         this.vstID = 0;
 
         this.dataType = CHUNK_OPAQUE;
