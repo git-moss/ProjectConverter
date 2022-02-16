@@ -110,7 +110,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
     private boolean                          sourceIsBeats;
     private boolean                          sourceIsEnvelopeBeats;
-    private boolean                          destinationIsBeats;
+    private final boolean                    destinationIsBeats;
 
 
     /**
@@ -183,7 +183,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
             }
         }
         final Optional<Node> notesParameter = rootChunk.getChildNode (PROJECT_NOTES);
-        if (notesParameter.isPresent () && notesParameter.get ()instanceof final Chunk notesChunk)
+        if (notesParameter.isPresent () && notesParameter.get () instanceof final Chunk notesChunk)
         {
             final StringBuilder comment = new StringBuilder ();
             for (final Node commentLine: notesChunk.getChildNodes ())
@@ -586,7 +586,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
     private void convertAutomation (final Track track, final Chunk trackChunk, final String envelopeName, final Parameter parameter, final boolean interpolate)
     {
         final Optional<Node> envelopeNode = trackChunk.getChildNode (envelopeName);
-        if (envelopeNode.isPresent () && envelopeNode.get ()instanceof final Chunk envelopeChunk)
+        if (envelopeNode.isPresent () && envelopeNode.get () instanceof final Chunk envelopeChunk)
         {
             final Lanes lanes = this.trackLanesMap.get (track);
             if (lanes == null)
@@ -623,7 +623,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
     private void convertTempoAutomation (final Chunk rootChunk, final Lanes masterTrackLanes)
     {
         final Optional<Node> envelopeNode = rootChunk.getChildNode (PROJECT_TEMPO_ENVELOPE);
-        if (envelopeNode.isPresent () && envelopeNode.get ()instanceof final Chunk envelopeChunk)
+        if (envelopeNode.isPresent () && envelopeNode.get () instanceof final Chunk envelopeChunk)
         {
             final Points tempoEnvelope = new Points ();
             masterTrackLanes.lanes.add (tempoEnvelope);
@@ -806,6 +806,8 @@ public class ReaperToDawProjectConverter extends ReaperTags
                 isVST2 = false;
                 break;
 
+            // TODO Support AU and build-in devices
+
             default:
                 // Not supported but should never be reached
                 return null;
@@ -960,24 +962,9 @@ public class ReaperToDawProjectConverter extends ReaperTags
      */
     private void convertMIDI (final Clip clip, final Chunk sourceChunk) throws ParseException
     {
-        final Optional<Node> hasData = sourceChunk.getChildNode (SOURCE_HASDATA);
-        if (hasData.isEmpty ())
+        final int ticksPerQuarterNote = readTicksPerQuarterNote (sourceChunk);
+        if (ticksPerQuarterNote == -1)
             return;
-
-        final Node hasDataNode = hasData.get ();
-        final List<String> hasDataParameters = hasDataNode.getParameters ();
-        if (hasDataParameters.size () != 3 || !"1".equals (hasDataParameters.get (0)))
-            return;
-
-        final int ticksPerQuarterNote;
-        try
-        {
-            ticksPerQuarterNote = Integer.parseInt (hasDataParameters.get (1));
-        }
-        catch (final NumberFormatException ex)
-        {
-            return;
-        }
 
         final Notes notes = new Notes ();
         final Lanes contentLanes = new Lanes ();
@@ -1019,11 +1006,11 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
                     final double position = noteStart.getPosition () / (double) ticksPerQuarterNote;
                     final double length = (midiEvent.getPosition () - noteStart.getPosition ()) / (double) ticksPerQuarterNote;
-                    note.time = Double.valueOf (handleMIDITime (position));
-                    note.duration = Double.valueOf (handleMIDITime (length));
+                    note.time = Double.valueOf (this.handleMIDITime (position));
+                    note.duration = Double.valueOf (this.handleMIDITime (length));
                     note.key = noteStart.getData1 ();
                     note.velocity = Double.valueOf (noteStart.getData2 () / 127.0);
-                    // note.releaseVelocity -> information not available
+                    note.releaseVelocity = Double.valueOf (midiEvent.getData2 () / 127.0);
 
                     notes.notes.add (note);
                     break;
@@ -1124,6 +1111,36 @@ public class ReaperToDawProjectConverter extends ReaperTags
 
 
     /**
+     * Get the resolution of the note times (ticks per quarter note)
+     *
+     * @param sourceChunk The source chunk from which to read the information
+     * @return The resolution or -1 if it could not be read
+     */
+    private static int readTicksPerQuarterNote (final Chunk sourceChunk)
+    {
+        final Optional<Node> hasData = sourceChunk.getChildNode (SOURCE_HASDATA);
+        if (hasData.isEmpty ())
+            return -1;
+
+        final Node hasDataNode = hasData.get ();
+        final List<String> hasDataParameters = hasDataNode.getParameters ();
+        if (hasDataParameters.size () != 3 || !"1".equals (hasDataParameters.get (0)))
+            return -1;
+
+        final int ticksPerQuarterNote;
+        try
+        {
+            ticksPerQuarterNote = Integer.parseInt (hasDataParameters.get (1));
+        }
+        catch (final NumberFormatException ex)
+        {
+            return -1;
+        }
+        return ticksPerQuarterNote;
+    }
+
+
+    /**
      * Find the matching note start event for a note end event.
      *
      * @param noteStarts All note start events
@@ -1138,34 +1155,6 @@ public class ReaperToDawProjectConverter extends ReaperTags
                 return event;
         }
         return null;
-    }
-
-
-    /**
-     * Convert the time value to beats.
-     *
-     * @param value The value in time
-     * @return The value in beats
-     */
-    private double toBeats (final double value)
-    {
-        final double tempo = this.project.transport.tempo.value.doubleValue ();
-        final double bps = tempo / 60.0;
-        return bps * value;
-    }
-
-
-    /**
-     * Convert the beats value to time.
-     *
-     * @param value The value in beats
-     * @return The value in time
-     */
-    private double toTime (final double value)
-    {
-        final double tempo = this.project.transport.tempo.value.doubleValue ();
-        final double bps = tempo / 60.0;
-        return value / bps;
     }
 
 
@@ -1446,7 +1435,7 @@ public class ReaperToDawProjectConverter extends ReaperTags
     private static long getDuration (final AudioFileFormat audioFileFormat)
     {
         final String DURATION = "duration";
-        Long duration = (Long) audioFileFormat.properties ().get (DURATION);
+        final Long duration = (Long) audioFileFormat.properties ().get (DURATION);
         // TODO this must be "/ 1000 / 1000" to get seconds!
         if (duration != null)
             return duration.longValue () * 1000L * 1000L;
@@ -1503,5 +1492,33 @@ public class ReaperToDawProjectConverter extends ReaperTags
     private double handleMIDITime (final double time)
     {
         return this.destinationIsBeats ? time : this.toTime (time);
+    }
+
+
+    /**
+     * Convert the time value to beats.
+     *
+     * @param value The value in time
+     * @return The value in beats
+     */
+    private double toBeats (final double value)
+    {
+        final double tempo = this.project.transport.tempo.value.doubleValue ();
+        final double bps = tempo / 60.0;
+        return bps * value;
+    }
+
+
+    /**
+     * Convert the beats value to time.
+     *
+     * @param value The value in beats
+     * @return The value in time
+     */
+    private double toTime (final double value)
+    {
+        final double tempo = this.project.transport.tempo.value.doubleValue ();
+        final double bps = tempo / 60.0;
+        return value / bps;
     }
 }

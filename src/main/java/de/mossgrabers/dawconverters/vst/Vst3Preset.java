@@ -19,7 +19,9 @@ import java.util.List;
  */
 public class Vst3Preset
 {
+    /** The size of the VST 3 preset header. */
     public static final int     HEADER_SIZE = 48;
+
     private static final String HEADER_ID   = "VST3";
     private static final String LIST_ID     = "List";
 
@@ -27,8 +29,11 @@ public class Vst3Preset
     /** Information about one chunk. */
     public class Vst3ChunkInfo
     {
+        /** The ID of the chunk. */
         public String id;
-        public long   offset; // Offset is from the beginning of the file
+        /** Offset is from the beginning of the file. */
+        public long   offset;
+        /** The size of the chunk. */
         public long   size;
     }
 

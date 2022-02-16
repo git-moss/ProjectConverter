@@ -6,6 +6,7 @@ package de.mossgrabers.dawconverters.reaper;
 
 import de.mossgrabers.dawconverters.reaper.project.Chunk;
 import de.mossgrabers.dawconverters.reaper.project.Node;
+import de.mossgrabers.dawconverters.reaper.project.ReaperMidiEvent;
 import de.mossgrabers.dawconverters.reaper.project.ReaperProject;
 import de.mossgrabers.dawconverters.reaper.project.VstChunkHandler;
 
@@ -21,7 +22,9 @@ import com.bitwig.dawproject.Track;
 import com.bitwig.dawproject.TrackOrFolder;
 import com.bitwig.dawproject.Transport;
 import com.bitwig.dawproject.Unit;
+import com.bitwig.dawproject.device.AuPlugin;
 import com.bitwig.dawproject.device.Device;
+import com.bitwig.dawproject.device.Plugin;
 import com.bitwig.dawproject.device.Vst2Plugin;
 import com.bitwig.dawproject.device.Vst3Plugin;
 import com.bitwig.dawproject.timeline.Audio;
@@ -32,6 +35,7 @@ import com.bitwig.dawproject.timeline.IntegerPoint;
 import com.bitwig.dawproject.timeline.Lanes;
 import com.bitwig.dawproject.timeline.Marker;
 import com.bitwig.dawproject.timeline.Markers;
+import com.bitwig.dawproject.timeline.Note;
 import com.bitwig.dawproject.timeline.Notes;
 import com.bitwig.dawproject.timeline.Point;
 import com.bitwig.dawproject.timeline.Points;
@@ -69,7 +73,16 @@ import java.util.TreeMap;
  */
 public class DawProjectToReaperConverter extends ReaperTags
 {
-    private static final String ONLY_LINEAR = "Only linear volumes and panoramas are supported.";
+    private static final String                ONLY_LINEAR            = "Only linear volumes and panoramas are supported.";
+    private static final int                   TICKS_PER_QUARTER_NOTE = 960;
+
+    private static final Map<Class<?>, String> PLUGIN_TYPES           = new HashMap<> ();
+    static
+    {
+        PLUGIN_TYPES.put (Vst2Plugin.class, PLUGIN_VST_2);
+        PLUGIN_TYPES.put (Vst3Plugin.class, PLUGIN_VST_3);
+        PLUGIN_TYPES.put (AuPlugin.class, PLUGIN_AU);
+    }
 
 
     /** Helper structure to create a flat track list. */
@@ -96,7 +109,7 @@ public class DawProjectToReaperConverter extends ReaperTags
     private Double                    tempo;
     private int                       numerator;
     private int                       denominator;
-    private List<String>              audioFiles   = new ArrayList<> ();
+    private final List<String>        audioFiles   = new ArrayList<> ();
     private boolean                   destinationIsBeats;
 
 
@@ -213,12 +226,9 @@ public class DawProjectToReaperConverter extends ReaperTags
         if (this.metadata.comment != null)
         {
             final Chunk notesChunk = addChunk (this.rootChunk, PROJECT_NOTES, "0");
-
             final String [] commentLines = this.metadata.comment.split ("\\R");
             for (final String line: commentLines)
-            {
                 addNode (notesChunk, "|" + line);
-            }
         }
 
         // Fill render metadata
@@ -246,7 +256,7 @@ public class DawProjectToReaperConverter extends ReaperTags
 
     /**
      * Assigns the Arrangement data to different Reaper settings.
-     * 
+     *
      * @return True if the time base is in beats otherwise seconds
      */
     private boolean convertArrangement ()
@@ -324,25 +334,32 @@ public class DawProjectToReaperConverter extends ReaperTags
         for (final TrackInfo trackInfo: flatTracks)
         {
             final Track track = trackInfo.track;
-            if (track == null)
-                continue;
+            if (track != null && track.sends != null)
+                this.convertSends (track);
+        }
+    }
 
-            if (track.sends != null)
+
+    /**
+     * Convert all sends of the track.
+     *
+     * @param track The track
+     * @throws IOException Units must be linear
+     */
+    private void convertSends (final Track track) throws IOException
+    {
+        for (final Send send: track.sends)
+        {
+            if (send.destination == null || send.value == null)
+                continue;
+            if (send.unit != Unit.linear)
+                throw new IOException (ONLY_LINEAR);
+            final Chunk auxChunk = this.chunkMapping.get (send.destination);
+            final Integer index = this.trackMapping.get (track);
+            if (auxChunk != null && index != null)
             {
-                for (final Send send: track.sends)
-                {
-                    if (send.destination == null || send.value == null)
-                        continue;
-                    if (send.unit != Unit.linear)
-                        throw new IOException (ONLY_LINEAR);
-                    final Chunk auxChunk = this.chunkMapping.get (send.destination);
-                    final Integer index = this.trackMapping.get (track);
-                    if (auxChunk != null && index != null)
-                    {
-                        final String mode = send.type == null || send.type == SendType.post ? "0" : "1";
-                        addNode (auxChunk, TRACK_AUX_RECEIVE, index.toString (), mode, send.value.toString (), "0");
-                    }
-                }
+                final String mode = send.type == null || send.type == SendType.post ? "0" : "1";
+                addNode (auxChunk, TRACK_AUX_RECEIVE, index.toString (), mode, send.value.toString (), "0");
             }
         }
     }
@@ -367,6 +384,8 @@ public class DawProjectToReaperConverter extends ReaperTags
         {
             if (device.state == null)
                 continue;
+
+            // TODO Handle build-in and AU devices
 
             final boolean bypass = device.enabled != null && device.enabled.value != null && !device.enabled.value.booleanValue ();
             final boolean offline = device.loaded != null && !device.loaded.booleanValue ();
@@ -401,7 +420,7 @@ public class DawProjectToReaperConverter extends ReaperTags
      * @param trackIndex The index of the track to convert
      * @throws IOException Error converting the track
      */
-    private void convertTrack (final List<TrackInfo> flatTracks, int trackIndex) throws IOException
+    private void convertTrack (final List<TrackInfo> flatTracks, final int trackIndex) throws IOException
     {
         final TrackInfo trackInfo = flatTracks.get (trackIndex);
         final Chunk trackChunk = addChunk (this.rootChunk, CHUNK_TRACK);
@@ -441,8 +460,8 @@ public class DawProjectToReaperConverter extends ReaperTags
     /**
      * Recursively convert grouped clips into top level media items, since Reaper does not support
      * to wrap clips into a parent clip.
-     * 
-     * @param trackChunk
+     *
+     * @param trackChunk The Reaper track chunk
      * @param clips The clips to convert
      * @param parentPosition The time at which the parent clip starts
      * @param parentDuration The duration of the parent clip
@@ -461,13 +480,13 @@ public class DawProjectToReaperConverter extends ReaperTags
             // Cannot group clips in clips in Reaper, therefore only create the most inner clips
             if (clip.content instanceof final Clips groupedClips)
             {
-                convertItems (trackChunk, groupedClips, parentPosition + clip.time, clip.duration, clip.playStart == null ? 0 : clip.playStart.doubleValue (), isBeats);
+                this.convertItems (trackChunk, groupedClips, parentPosition + clip.time, clip.duration, clip.playStart == null ? 0 : clip.playStart.doubleValue (), isBeats);
                 continue;
             }
 
             // Ignore clips outside of the view of the parent clip
             final double clipTimeEnd = clip.time + clip.duration;
-            if (clipTimeEnd <= parentOffset || clip.time >= parentDuration)
+            if (parentDuration != -1 && (clipTimeEnd <= parentOffset || clip.time >= parentDuration))
                 continue;
 
             final Chunk itemChunk = addChunk (trackChunk, CHUNK_ITEM);
@@ -487,7 +506,7 @@ public class DawProjectToReaperConverter extends ReaperTags
                 start = 0;
             }
             // Limit to max duration depending on the surrounding clip
-            if (duration > parentDuration)
+            if (parentDuration != -1 && duration > parentDuration)
                 duration = parentDuration;
             start += parentPosition;
             addNode (itemChunk, ITEM_POSITION, Double.toString (this.handleTime (start, isBeats)));
@@ -500,16 +519,16 @@ public class DawProjectToReaperConverter extends ReaperTags
             // FADEOUT 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
             addNode (itemChunk, ITEM_FADEOUT, "1", this.handleTime (clip.fadeOutTime, isBeats).toString (), "0");
 
-            if (clip.content instanceof Notes notes)
-                convertMIDI (clip, notes, itemChunk);
-            else if (clip.content instanceof Audio audio)
-                convertAudio (audio, itemChunk, 1);
-            else if (clip.content instanceof Warps warps)
+            if (clip.content instanceof final Notes notes)
+                this.convertMIDI (clip, notes, itemChunk, sourceIsBeats);
+            else if (clip.content instanceof final Audio audio)
+                this.convertAudio (audio, itemChunk, 1);
+            else if (clip.content instanceof final Warps warps)
             {
-                final double playrate = calcPlayrate (warps.events, sourceIsBeats);
+                final double playrate = this.calcPlayrate (warps.events, sourceIsBeats);
 
-                if (warps.content instanceof Audio audio)
-                    convertAudio (audio, itemChunk, playrate);
+                if (warps.content instanceof final Audio audio)
+                    this.convertAudio (audio, itemChunk, playrate);
             }
             else
             {
@@ -578,18 +597,49 @@ public class DawProjectToReaperConverter extends ReaperTags
      * @param clip The clip to convert
      * @param notes The notes of the clip
      * @param itemChunk The chunk of the media item to fill
+     * @param sourceIsBeats True if the time is in beats otherwise in seconds
      */
-    private void convertMIDI (final Clip clip, Notes notes, final Chunk itemChunk)
+    private void convertMIDI (final Clip clip, final Notes notes, final Chunk itemChunk, final boolean sourceIsBeats)
     {
         final Chunk sourceChunk = addChunk (itemChunk, CHUNK_ITEM_SOURCE, "MIDI");
+        // Prevent note repetition if last note does not end at the clip end
+        addNode (itemChunk, ITEM_LOOP, "0");
 
-        // TODO Implement MIDI clip conversion
+        addNode (sourceChunk, SOURCE_HASDATA, "1", "960", "QN");
+
+        final List<ReaperMidiEvent> events = new ArrayList<> ();
+
+        // Create all note on and off events
+        for (final Note note: notes.notes)
+        {
+            // Time is always in beats for MIDI events!
+            final long startPosition = (long) ((sourceIsBeats ? note.time.doubleValue () : this.toBeats (note.time.doubleValue ())) * TICKS_PER_QUARTER_NOTE);
+            final long endPosition = startPosition + (long) ((sourceIsBeats ? note.duration.doubleValue () : this.toBeats (note.duration.doubleValue ())) * TICKS_PER_QUARTER_NOTE);
+            final int velocity = note.velocity == null ? 0 : (int) (note.velocity.doubleValue () * 127.0);
+            final int releaseVelocity = note.releaseVelocity == null ? 0 : (int) (note.releaseVelocity.doubleValue () * 127.0);
+
+            events.add (new ReaperMidiEvent (startPosition, note.channel, 0x90, note.key, velocity));
+            events.add (new ReaperMidiEvent (endPosition, note.channel, 0x80, note.key, releaseVelocity));
+        }
+
+        // Sort the events by their time position
+        Collections.sort (events, (o1, o2) -> (int) (o1.getPosition () - o2.getPosition ()));
+
+        // Finally, calculate the offsets between the events from their position
+        long lastPosition = 0;
+        for (final ReaperMidiEvent event: events)
+        {
+            final long currentPosition = event.getPosition ();
+            event.setOffset (currentPosition - lastPosition);
+            lastPosition = currentPosition;
+            sourceChunk.addChildNode (event.toNode ());
+        }
     }
 
 
     /**
      * Convert all lanes. Assigns the Markers data to different Reaper settings.
-     * 
+     *
      * @param sourceIsBeats If true the source time base is in beats otherwise seconds
      */
     private void convertLanes (final boolean sourceIsBeats)
@@ -627,7 +677,7 @@ public class DawProjectToReaperConverter extends ReaperTags
                         if (trackTimeline instanceof final Points trackEnvelope)
                             this.handleEnvelopeParameter (track, trackChunk, trackEnvelope, isBeats);
                         else if (trackTimeline instanceof final Clips clips)
-                            this.convertItems (trackChunk, clips, 0, 0, 0, isBeats);
+                            this.convertItems (trackChunk, clips, 0, -1, 0, isBeats);
                     }
                 }
             }
@@ -887,11 +937,17 @@ public class DawProjectToReaperConverter extends ReaperTags
     private static String createDeviceName (final Device device)
     {
         final StringBuilder name = new StringBuilder ();
-        if (device instanceof Vst2Plugin)
-            name.append (PLUGIN_VST_2);
-        else if (device instanceof Vst3Plugin)
-            name.append (PLUGIN_VST_3);
-        name.append (": ").append (device.deviceName).append (" (").append (device.deviceVendor).append (")");
+
+        if (device instanceof Plugin plugin)
+        {
+            final String pluginType = PLUGIN_TYPES.get (plugin.getClass ());
+            // TODO Handle if null
+            name.append (pluginType);
+        }
+
+        name.append (": ").append (device.deviceName);
+        if (device.deviceVendor != null)
+            name.append (" (").append (device.deviceVendor).append (")");
         return name.toString ();
     }
 
@@ -1029,7 +1085,7 @@ public class DawProjectToReaperConverter extends ReaperTags
 
     private Double handleTime (final Double time, final boolean sourceIsBeats)
     {
-        return Double.valueOf (time == null ? 0 : handleTime (time.doubleValue (), sourceIsBeats));
+        return Double.valueOf (time == null ? 0 : this.handleTime (time.doubleValue (), sourceIsBeats));
     }
 
 

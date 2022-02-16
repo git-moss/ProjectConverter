@@ -36,7 +36,7 @@ public class ReaperMidiEvent
     public ReaperMidiEvent (final Node noteNode) throws ParseException
     {
         final String name = noteNode.getName ();
-        if (!"E".equals (name) && !"e".equals (name))
+        if (!"E".equalsIgnoreCase (name))
             return;
 
         final List<String> nodeParts = noteNode.getParameters ();
@@ -59,6 +59,44 @@ public class ReaperMidiEvent
         {
             throw new ParseException ("Malformed MIDI event in MIDI source section.", 0);
         }
+    }
+
+
+    public ReaperMidiEvent (final long position, final int channel, final int code, final int data1, final int data2)
+    {
+        this.position = position;
+        this.channel = channel;
+        this.code = code;
+        this.data1 = data1;
+        this.data2 = data2;
+    }
+
+
+    /**
+     * Convert the values back to a note node.
+     *
+     * @return The node
+     */
+    public Node toNode ()
+    {
+        final Node node = new Node ();
+
+        node.setName ("E");
+
+        final List<String> parameters = node.getParameters ();
+
+        parameters.add (Long.toString (this.offset));
+        parameters.add (String.format ("%02x", Integer.valueOf (this.code + this.channel)));
+        parameters.add (String.format ("%02x", Integer.valueOf (this.data1)));
+        parameters.add (String.format ("%02x", Integer.valueOf (this.data2)));
+
+        return node;
+    }
+
+
+    public void setOffset (long offset)
+    {
+        this.offset = offset;
     }
 
 

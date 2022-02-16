@@ -54,6 +54,7 @@ public class ReaperTags
     protected static final String ITEM_FADEOUT               = "FADEOUT";
     protected static final String ITEM_SAMPLE_OFFSET         = "SOFFS";
     protected static final String ITEM_PLAYRATE              = "PLAYRATE";
+    protected static final String ITEM_LOOP                  = "LOOP";
     protected static final String CHUNK_ITEM_SOURCE          = "SOURCE";
     protected static final String SOURCE_HASDATA             = "HASDATA";
     protected static final String SOURCE_FILE                = "FILE";
@@ -67,6 +68,8 @@ public class ReaperTags
     protected static final String PLUGIN_VST_2_INSTRUMENT    = "VSTi";
     protected static final String PLUGIN_VST_3               = "VST3";
     protected static final String PLUGIN_VST_3_INSTRUMENT    = "VST3i";
+    // TODO Check on Macos...
+    protected static final String PLUGIN_AU                  = "AU";
 
 
     /**

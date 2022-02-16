@@ -55,7 +55,14 @@ public final class ConvertProject
             final String outputFileName = pos > 0 ? fileName.substring (0, pos) : fileName;
             final String ending = isReaperProject ? ".dawproject" : ".rpp";
             final File sourcePath = inputFile.getParentFile ();
-            final File outputFile = new File (sourcePath, outputFileName + ending);
+            final File destinationPath = new File (sourcePath, outputFileName);
+            if (!destinationPath.mkdir ())
+            {
+                System.out.println ("Could not create output directory.");
+                return;
+            }
+
+            final File outputFile = new File (destinationPath, outputFileName + ending);
 
             System.out.println ("Writing: " + outputFile.getAbsolutePath ());
             if (isReaperProject)
