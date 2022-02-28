@@ -1,16 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>de.mossgrabers</groupId>
-	<artifactId>dawconverters</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
-	<name>DawConverters</name>
-	<description>Convert from a specific DAW project format to generic dawproject</description>
+	<artifactId>projectconverter</artifactId>
+	<version>1.0.0</version>
+	<name>ProjectConverter</name>
+	<description>Convert from/to a specific DAW project format to/from generic dawproject</description>
+	<organization>
+		<name>Jürgen Moßgraber</name>
+		<url>http://www.mossgrabers.de</url>
+	</organization>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<main.class>de.mossgrabers.projectconverter.ui.ProjectConverterApp</main.class>
 	</properties>
 
 	<repositories>
@@ -18,13 +22,33 @@
 			<id>maven-local-repository</id>
 			<url>file:///${project.basedir}/maven-local-repository</url>
 		</repository>
+		<repository>
+			<id>MavenCentral</id>
+			<name>Maven Central Repository</name>
+			<url>https://mvnrepository.com</url>
+		</repository>
 	</repositories>
 
 	<dependencies>
 		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-controls</artifactId>
+			<version>17.0.2</version>
+		</dependency>
+		<dependency>
+			<groupId>org.openjfx</groupId>
+			<artifactId>javafx-web</artifactId>
+			<version>17.0.2</version>
+		</dependency>
+		<dependency>
+			<artifactId>uitools</artifactId>
+			<groupId>de.mossgrabers</groupId>
+			<version>1.0</version>
+		</dependency>
+		<dependency>
 			<groupId>com.bitwig.open</groupId>
 			<artifactId>dawproject</artifactId>
-			<version>1-SNAPSHOT</version>
+			<version>0.1</version>
 		</dependency>
 	</dependencies>
 
@@ -46,7 +70,7 @@
 						<configuration>
 							<rules>
 								<requireMavenVersion>
-									<version>3.6.3</version>
+									<version>3.8.1</version>
 								</requireMavenVersion>
 							</rules>
 						</configuration>
@@ -72,12 +96,100 @@
 				<artifactId>maven-jar-plugin</artifactId>
 				<version>3.2.0</version>
 				<configuration>
+					<outputDirectory>target/lib</outputDirectory>
 					<archive>
 						<manifest>
-							<addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+							<mainClass>${main.class}</mainClass>
+							<addClasspath>true</addClasspath>
 						</manifest>
+						<manifestEntries>
+							<Specification-Title>${project.name}</Specification-Title>
+							<Specification-Version>${project.version}</Specification-Version>
+							<Specification-Vendor>${project.organization.name}</Specification-Vendor>
+							<Implementation-Title>${project.name}</Implementation-Title>
+							<Implementation-Version>${project.version}</Implementation-Version>
+							<Implementation-Vendor-Id>${project.groupId}</Implementation-Vendor-Id>
+							<Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
+						</manifestEntries>
 					</archive>
 				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.openjfx</groupId>
+				<artifactId>javafx-maven-plugin</artifactId>
+				<version>0.0.6</version>
+				<configuration>
+					<mainClass>${main.class}</mainClass>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>3.1.2</version>
+				<executions>
+					<execution>
+						<id>copy-dependencies</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>resolve</goal>
+							<goal>copy-dependencies</goal>
+						</goals>
+						<configuration>
+							<includeScope>runtime</includeScope>
+							<outputDirectory>${project.build.directory}/lib</outputDirectory>
+							<overWriteReleases>false</overWriteReleases>
+							<overWriteSnapshots>false</overWriteSnapshots>
+							<overWriteIfNewer>true</overWriteIfNewer>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>org.panteleyev</groupId>
+				<artifactId>jpackage-maven-plugin</artifactId>
+				<version>1.5.1</version>
+				<configuration>
+					<input>target/lib</input>
+					<destination>target/release</destination>
+					<mainJar>projectconverter-${project.version}.jar</mainJar>
+					<mainClass>${main.class}</mainClass>
+					<name>${project.name}</name>
+					<appVersion>${project.version}</appVersion>
+					<copyright>(c) 2022 by ${project.organization.name}</copyright>
+					<description>A tool for converting multi-sample from one format to another.</description>
+					<vendor>${project.organization.name}</vendor>
+					<licenseFile>LICENSE</licenseFile>
+				</configuration>
+				<executions>
+					<execution>
+						<id>mac</id>
+						<configuration>
+							<type>DMG</type>
+							<icon>icons/projectconverter.icns</icon>
+						</configuration>
+					</execution>
+					<execution>
+						<id>win</id>
+						<configuration>
+							<type>MSI</type>
+							<icon>icons/projectconverter.ico</icon>
+							<winMenu>true</winMenu>
+							<winPerUserInstall>false</winPerUserInstall>
+							<winDirChooser>true</winDirChooser>
+							<winUpgradeUuid>9cd929a1-b574-4998-9d48-bccf86ca3b6b</winUpgradeUuid>
+						</configuration>
+					</execution>
+					<execution>
+						<id>linux</id>
+						<configuration>
+							<type>DEB</type>
+							<icon>src/main/resources/de/mossgrabers/projectconverter/images/AppIcon.png</icon>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 
 			<!-- Check for outdated libraries -->
