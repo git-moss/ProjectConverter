@@ -16,14 +16,15 @@ import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
 import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
 
 import com.bitwig.dawproject.Arrangement;
-import com.bitwig.dawproject.FolderTrack;
+import com.bitwig.dawproject.Channel;
+import com.bitwig.dawproject.ContentType;
+import com.bitwig.dawproject.Lane;
 import com.bitwig.dawproject.Metadata;
 import com.bitwig.dawproject.MixerRole;
 import com.bitwig.dawproject.Project;
 import com.bitwig.dawproject.Send;
 import com.bitwig.dawproject.SendType;
 import com.bitwig.dawproject.Track;
-import com.bitwig.dawproject.TrackOrFolder;
 import com.bitwig.dawproject.Transport;
 import com.bitwig.dawproject.Unit;
 import com.bitwig.dawproject.device.Device;
@@ -87,17 +88,18 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
 
     /** Helper structure to create a flat track list. */
-    private class TrackInfo
+    private static class TrackInfo
     {
-        FolderTrack folder    = null;
-        Track       track     = null;
-        int         type      = 0;
-        int         direction = 0;
+        Track folder    = null;
+        Track track     = null;
+        int   type      = 0;
+        int   direction = 0;
     }
 
 
-    private final Map<Track, Chunk>   chunkMapping = new HashMap<> ();
-    private final Map<Track, Integer> trackMapping = new HashMap<> ();
+    private final Map<Track, Chunk>   chunkMapping   = new HashMap<> ();
+    private final Map<Channel, Track> channelMapping = new HashMap<> ();
+    private final Map<Track, Integer> trackMapping   = new HashMap<> ();
 
     // TODO all state must be removed!
 
@@ -108,7 +110,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     private Double                    tempo;
     private int                       numerator;
     private int                       denominator;
-    private final List<String>        audioFiles   = new ArrayList<> ();
+    private final List<String>        audioFiles     = new ArrayList<> ();
     private boolean                   destinationIsBeats;
 
 
@@ -150,23 +152,23 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final boolean sourceIsBeats = this.convertArrangement (project);
         this.convertTransport (project, rootChunk);
 
-        final List<TrackOrFolder> tracks = project.tracks;
-        if (tracks == null)
+        final List<Lane> lanes = project.structure;
+        if (lanes == null)
             return;
 
         // Find the master track and handle it separately
-        for (final TrackOrFolder trackOrFolder: tracks)
+        for (final Lane lane: lanes)
         {
-            if (trackOrFolder instanceof final Track track && track.mixerRole == MixerRole.master)
+            if (lane instanceof final Track track && track.channel != null && track.channel.role == MixerRole.master)
             {
-                tracks.remove (track);
+                lanes.remove (track);
                 this.masterTrack = track;
                 this.convertMaster (dawProject.getMediaFiles (), track, rootChunk);
                 break;
             }
         }
 
-        this.convertTracks (dawProject.getMediaFiles (), tracks, rootChunk);
+        this.convertTracks (dawProject.getMediaFiles (), lanes, rootChunk);
 
         this.destinationIsBeats = true;
 
@@ -293,12 +295,11 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     private boolean convertArrangement (final Project project)
     {
         final Arrangement arrangement = project.arrangement;
-        if (arrangement == null || arrangement.content == null)
+        if (arrangement == null || arrangement.lanes == null)
             return true;
-        if (arrangement.content instanceof final Lanes lanes)
-            this.arrangementLanes = lanes;
+        this.arrangementLanes = arrangement.lanes;
 
-        return updateIsBeats (arrangement.content, true);
+        return updateIsBeats (arrangement.lanes, true);
     }
 
 
@@ -331,24 +332,29 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      */
     private void convertMaster (final IMediaFiles mediaFiles, final Track masterTrack, final Chunk rootChunk) throws IOException
     {
-        addNode (rootChunk, ReaperTags.MASTER_NUMBER_OF_CHANNELS, masterTrack.audioChannels == null ? "2" : masterTrack.audioChannels.toString ());
+        if (masterTrack.channel == null)
+            return;
 
-        if (masterTrack.volume != null && masterTrack.pan != null)
+        final Channel channel = masterTrack.channel;
+
+        addNode (rootChunk, ReaperTags.MASTER_NUMBER_OF_CHANNELS, channel.audioChannels == null ? "2" : channel.audioChannels.toString ());
+
+        if (channel.volume != null && channel.pan != null)
         {
-            if (masterTrack.volume.unit != Unit.linear || masterTrack.pan.unit != Unit.linear)
+            if (channel.volume.unit != Unit.linear || channel.pan.unit != Unit.linear)
                 throw new IOException (ONLY_LINEAR);
-            addNode (rootChunk, ReaperTags.MASTER_VOLUME_PAN, masterTrack.volume.value.toString (), masterTrack.pan.value.toString ());
+            addNode (rootChunk, ReaperTags.MASTER_VOLUME_PAN, channel.volume.value.toString (), channel.pan.value.toString ());
         }
 
-        int state = masterTrack.solo != null && masterTrack.solo.booleanValue () ? 2 : 0;
-        if (masterTrack.mute != null && masterTrack.mute.value.booleanValue ())
+        int state = channel.solo != null && channel.solo.booleanValue () ? 2 : 0;
+        if (channel.mute != null && channel.mute.value.booleanValue ())
             state |= 1;
         addNode (rootChunk, ReaperTags.MASTER_MUTE_SOLO, Integer.toString (state));
 
         if (masterTrack.color != null)
             addNode (rootChunk, ReaperTags.MASTER_COLOR, Integer.toString (fromHexColor (masterTrack.color)));
 
-        this.convertDevices (mediaFiles, masterTrack.devices, rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN);
+        this.convertDevices (mediaFiles, channel.devices, rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN);
     }
 
 
@@ -356,14 +362,14 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * Assigns the data of all Tracks to different Reaper settings.
      * 
      * @param mediaFiles Access to additional media files
-     * @param tracks The tracks to convert
+     * @param lanes The lanes which contain the tracks to convert
      * @param rootChunk The root chunk to add the information
      * @throws IOException Units must be linear
      */
-    private void convertTracks (final IMediaFiles mediaFiles, final List<TrackOrFolder> tracks, final Chunk rootChunk) throws IOException
+    private void convertTracks (final IMediaFiles mediaFiles, final List<Lane> lanes, final Chunk rootChunk) throws IOException
     {
         final List<TrackInfo> flatTracks = new ArrayList<> ();
-        this.createTrackStructure (tracks, flatTracks, true);
+        this.createTrackStructure (getTracks (lanes), flatTracks, true);
 
         for (int i = 0; i < flatTracks.size (); i++)
             this.convertTrack (mediaFiles, flatTracks, i, rootChunk);
@@ -372,7 +378,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         for (final TrackInfo trackInfo: flatTracks)
         {
             final Track track = trackInfo.track;
-            if (track != null && track.sends != null)
+            if (track != null)
                 this.convertSends (track);
         }
     }
@@ -386,18 +392,26 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      */
     private void convertSends (final Track track) throws IOException
     {
-        for (final Send send: track.sends)
+        if (track.channel == null || track.channel.sends == null)
+            return;
+        for (final Send send: track.channel.sends)
         {
-            if (send.destination == null || send.value == null)
+            if (send.destination == null || send.volume == null)
                 continue;
-            if (send.unit != Unit.linear)
+            if (send.volume.unit != Unit.linear)
                 throw new IOException (ONLY_LINEAR);
-            final Chunk auxChunk = this.chunkMapping.get (send.destination);
-            final Integer index = this.trackMapping.get (track);
-            if (auxChunk != null && index != null)
+            final Track destinationTrack = this.channelMapping.get (send.destination);
+            if (destinationTrack != null)
             {
-                final String mode = send.type == null || send.type == SendType.post ? "0" : "1";
-                addNode (auxChunk, ReaperTags.TRACK_AUX_RECEIVE, index.toString (), mode, send.value.toString (), "0");
+                final Chunk auxChunk = this.chunkMapping.get (destinationTrack);
+                final Integer index = this.trackMapping.get (track);
+                if (auxChunk != null && index != null)
+                {
+                    final String mode = send.type == null || send.type == SendType.post ? "0" : "1";
+                    addNode (auxChunk, ReaperTags.TRACK_AUX_RECEIVE, index.toString (), mode, send.volume.value.toString (), "0");
+
+                    // TODO add panorama
+                }
             }
         }
     }
@@ -467,32 +481,34 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final Track track = trackInfo.track;
         createTrack (trackChunk, trackInfo.folder == null ? trackInfo.track : trackInfo.folder, trackInfo.type, trackInfo.direction);
 
-        if (track == null)
+        if (track == null || track.channel == null)
             return;
 
         this.chunkMapping.put (track, trackChunk);
         this.trackMapping.put (track, Integer.valueOf (trackIndex));
 
+        final Channel channel = track.channel;
+
         // Number of channels
-        if (track.audioChannels != null)
-            addNode (trackChunk, ReaperTags.TRACK_NUMBER_OF_CHANNELS, track.audioChannels.toString ());
+        if (channel.audioChannels != null)
+            addNode (trackChunk, ReaperTags.TRACK_NUMBER_OF_CHANNELS, channel.audioChannels.toString ());
 
         // Volume & Panorama
-        if (track.volume != null)
+        if (channel.volume != null)
         {
-            if (track.volume.unit != Unit.linear || track.pan != null && track.pan.unit != Unit.linear)
+            if (channel.volume.unit != Unit.linear || channel.pan != null && channel.pan.unit != Unit.linear)
                 throw new IOException (ONLY_LINEAR);
-            addNode (trackChunk, ReaperTags.TRACK_VOLUME_PAN, track.volume.value.toString (), track.pan == null ? "0" : track.pan.value.toString ());
+            addNode (trackChunk, ReaperTags.TRACK_VOLUME_PAN, channel.volume.value.toString (), channel.pan == null ? "0" : channel.pan.value.toString ());
         }
 
         // Mute & Solo
-        int state = track.solo != null && track.solo.booleanValue () ? 2 : 0;
-        if (track.mute != null && track.mute.value.booleanValue ())
+        int state = channel.solo != null && channel.solo.booleanValue () ? 2 : 0;
+        if (channel.mute != null && channel.mute.value.booleanValue ())
             state |= 1;
         addNode (trackChunk, ReaperTags.TRACK_MUTE_SOLO, Integer.toString (state));
 
         // Convert all FX devices
-        this.convertDevices (mediaFiles, track.devices, trackChunk, ReaperTags.CHUNK_FXCHAIN);
+        this.convertDevices (mediaFiles, channel.devices, trackChunk, ReaperTags.CHUNK_FXCHAIN);
     }
 
 
@@ -786,8 +802,12 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     private void handleEnvelopeParameter (final Project project, final Track track, final Chunk trackChunk, final Points envelope, final boolean sourceIsBeats)
     {
+        if (track.channel == null)
+            return;
+        final Channel channel = track.channel;
+
         // Track Volume Parameter
-        if (track.volume == envelope.target.parameter)
+        if (channel.volume == envelope.target.parameter)
         {
             final String envelopeName = track == this.masterTrack ? ReaperTags.MASTER_VOLUME_ENVELOPE : ReaperTags.TRACK_VOLUME_ENVELOPE;
             this.createEnvelope (trackChunk, envelopeName, envelope, true, sourceIsBeats);
@@ -795,7 +815,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         }
 
         // Track Panorama Parameter
-        if (track.pan == envelope.target.parameter)
+        if (channel.pan == envelope.target.parameter)
         {
             final String envelopeName = track == this.masterTrack ? ReaperTags.MASTER_PANORAMA_ENVELOPE : ReaperTags.TRACK_PANORAMA_ENVELOPE;
             this.createEnvelope (trackChunk, envelopeName, envelope, true, sourceIsBeats);
@@ -803,24 +823,29 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         }
 
         // Track Mute Parameter
-        if (track.mute == envelope.target.parameter)
+        if (channel.mute == envelope.target.parameter)
         {
             this.createEnvelope (trackChunk, ReaperTags.TRACK_MUTE_ENVELOPE, envelope, false, sourceIsBeats);
             return;
         }
 
         // Track Sends Parameter
-        if (track.sends != null)
+        if (channel.sends != null)
         {
-            for (final Send send: track.sends)
+            for (final Send send: channel.sends)
             {
-                if (send == envelope.target.parameter)
+                if (send.volume == envelope.target.parameter)
                 {
-                    final Chunk auxChunk = this.chunkMapping.get (send.destination);
-                    if (auxChunk != null)
-                        this.createEnvelope (auxChunk, ReaperTags.TRACK_AUX_ENVELOPE, envelope, true, sourceIsBeats);
+                    final Track destinationTrack = this.channelMapping.get (send.destination);
+                    if (destinationTrack != null)
+                    {
+                        final Chunk auxChunk = this.chunkMapping.get (destinationTrack);
+                        if (auxChunk != null)
+                            this.createEnvelope (auxChunk, ReaperTags.TRACK_AUX_ENVELOPE, envelope, true, sourceIsBeats);
+                    }
                     return;
                 }
+                // TODO add panorama envelope
             }
         }
 
@@ -867,16 +892,16 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * Set the basic track information, like structure, name and color.
      *
      * @param trackChunk The track chunk to add the information
-     * @param trackOrFolder The dawproject object
+     * @param Track The dawproject object
      * @param type The folder type
      * @param direction The level direction
      */
-    private static void createTrack (final Chunk trackChunk, final TrackOrFolder trackOrFolder, final int type, final int direction)
+    private static void createTrack (final Chunk trackChunk, final Track Track, final int type, final int direction)
     {
-        addNode (trackChunk, ReaperTags.TRACK_NAME, trackOrFolder.name);
+        addNode (trackChunk, ReaperTags.TRACK_NAME, Track.name);
         addNode (trackChunk, ReaperTags.TRACK_STRUCTURE, Integer.toString (type), Integer.toString (direction));
-        if (trackOrFolder.color != null)
-            addNode (trackChunk, ReaperTags.TRACK_COLOR, Integer.toString (fromHexColor (trackOrFolder.color)));
+        if (Track.color != null)
+            addNode (trackChunk, ReaperTags.TRACK_COLOR, Integer.toString (fromHexColor (Track.color)));
     }
 
 
@@ -889,50 +914,51 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param flatTracks The list with all flat tracks so far
      * @param isTop True if this is the top level
      */
-    private void createTrackStructure (final List<TrackOrFolder> tracks, final List<TrackInfo> flatTracks, final boolean isTop)
+    private void createTrackStructure (final List<Track> tracks, final List<TrackInfo> flatTracks, final boolean isTop)
     {
-        final int size = tracks.size ();
-        for (int i = 0; i < size; i++)
+        for (final Track track: tracks)
         {
-            final TrackOrFolder trackOrFolder = tracks.get (i);
             final TrackInfo trackInfo = new TrackInfo ();
             flatTracks.add (trackInfo);
 
-            if (trackOrFolder instanceof final FolderTrack folder)
-            {
-                trackInfo.folder = folder;
+            if (track.channel != null)
+                this.channelMapping.put (track.channel, track);
 
-                if (folder.tracks == null)
-                {
-                    trackInfo.type = 2;
-                }
-                else
-                {
-                    final List<TrackOrFolder> children = new ArrayList<> (folder.tracks);
-
-                    // Find the track among the child tracks which acts as the mix master for the
-                    // folder, this will be combined with the parent folder
-                    for (final TrackOrFolder child: folder.tracks)
-                    {
-                        if (child instanceof final Track childTrack && childTrack.mixerRole == MixerRole.master)
-                        {
-                            trackInfo.track = childTrack;
-                            children.remove (childTrack);
-                            break;
-                        }
-                    }
-
-                    trackInfo.type = children.isEmpty () ? 2 : 1;
-                    if (trackInfo.type == 1)
-                        trackInfo.direction = 1;
-
-                    this.createTrackStructure (children, flatTracks, false);
-                }
-            }
-            else if (trackOrFolder instanceof final Track track)
+            // Is it a plain track?
+            if (!hasContent (ContentType.tracks, track.contentType))
             {
                 trackInfo.track = track;
+                continue;
             }
+
+            // Handle all child tracks of the group track
+            trackInfo.folder = track;
+            trackInfo.type = 2;
+
+            final List<Track> childTracks = track.tracks;
+            if (childTracks == null)
+                continue;
+
+            // Find the track among the child tracks which acts as the mix master for
+            // the folder, this will be combined with the parent folder
+            final List<Track> children = new ArrayList<> (childTracks);
+            for (final Track child: childTracks)
+            {
+                if (child.channel != null && child.channel.role == MixerRole.master)
+                {
+                    trackInfo.track = child;
+                    children.remove (child);
+                    break;
+                }
+            }
+
+            if (!children.isEmpty ())
+            {
+                trackInfo.type = 1;
+                trackInfo.direction = 1;
+            }
+
+            this.createTrackStructure (children, flatTracks, false);
         }
 
         // Increase the number of levels to move up, but do not move out of the top level
@@ -1138,5 +1164,28 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     {
         final double beatsPerSecond = this.tempo.doubleValue () / 60.0;
         return timeInBeats / beatsPerSecond;
+    }
+
+
+    private static boolean hasContent (final ContentType type, final ContentType [] types)
+    {
+        for (final ContentType t: types)
+        {
+            if (t == type)
+                return true;
+        }
+        return false;
+    }
+
+
+    private static List<Track> getTracks (final List<Lane> lanes)
+    {
+        final List<Track> tracks = new ArrayList<> ();
+        for (final Lane lane: lanes)
+        {
+            if (lane instanceof Track track)
+                tracks.add (track);
+        }
+        return tracks;
     }
 }

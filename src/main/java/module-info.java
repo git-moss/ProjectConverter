@@ -17,8 +17,8 @@ module de.mossgrabers.projectconverter
     requires transitive java.xml;
     requires transitive de.mossgrabers.uitools;
 
-    requires transitive dawproject;
     requires javafx.graphics;
+    requires transitive com.bitwig.dawproject;
 
 
     exports de.mossgrabers.projectconverter;

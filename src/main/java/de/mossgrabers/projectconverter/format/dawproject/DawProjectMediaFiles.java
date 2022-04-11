@@ -47,7 +47,7 @@ public class DawProjectMediaFiles implements IMediaFiles
         // Is the file external?
         if (file.exists ())
             return new FileInputStream (file);
-        // Not external, must be in the container
+
         return DawProject.streamEmbedded (this.sourceFile, id);
     }
 

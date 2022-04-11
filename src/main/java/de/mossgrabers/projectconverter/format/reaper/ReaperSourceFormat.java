@@ -17,22 +17,21 @@ import de.mossgrabers.tools.FileUtils;
 
 import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.BoolParameter;
+import com.bitwig.dawproject.Channel;
+import com.bitwig.dawproject.ContentType;
 import com.bitwig.dawproject.ExpressionType;
 import com.bitwig.dawproject.FileReference;
-import com.bitwig.dawproject.FolderTrack;
 import com.bitwig.dawproject.Interpolation;
 import com.bitwig.dawproject.Metadata;
 import com.bitwig.dawproject.MixerRole;
 import com.bitwig.dawproject.Parameter;
 import com.bitwig.dawproject.Project;
 import com.bitwig.dawproject.RealParameter;
-import com.bitwig.dawproject.Referencable;
+import com.bitwig.dawproject.Referenceable;
 import com.bitwig.dawproject.Send;
 import com.bitwig.dawproject.SendType;
 import com.bitwig.dawproject.TimeSignatureParameter;
-import com.bitwig.dawproject.TimelineRole;
 import com.bitwig.dawproject.Track;
-import com.bitwig.dawproject.TrackOrFolder;
 import com.bitwig.dawproject.Transport;
 import com.bitwig.dawproject.Unit;
 import com.bitwig.dawproject.device.Device;
@@ -104,23 +103,6 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         BOTH
     }
 
-    // TODO all state must be removed!
-
-
-    private final Deque<List<TrackOrFolder>> folderStack      = new LinkedList<> ();
-    private List<TrackOrFolder>              folderTracks;
-    private File                             sourcePath;
-
-    private final Lanes                      arrangementLanes = new Lanes ();
-
-    private final Map<Integer, List<Send>>   sendMapping      = new HashMap<> ();
-    private final Map<Track, Lanes>          trackLanesMap    = new HashMap<> ();
-    private final Map<Send, Chunk>           sendChunkMapping = new HashMap<> ();
-
-    private boolean                          sourceIsBeats;
-    private boolean                          sourceIsEnvelopeBeats;
-    private boolean                          destinationIsBeats;
-
 
     /**
      * Constructor.
@@ -145,17 +127,16 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     @Override
     public DawProjectContainer read (final File sourceFile) throws IOException, ParseException
     {
+        final BeatsAndTime beatsAndTime = new BeatsAndTime ();
+
         final List<String> lines = Files.readAllLines (sourceFile.toPath (), StandardCharsets.UTF_8);
         final Chunk rootChunk = ReaperProject.parse (lines);
 
-        Referencable.resetID ();
-
-        this.sourcePath = sourceFile.getParentFile ();
+        Referenceable.resetID ();
 
         final DawProjectContainer dawProject = new DawProjectContainer (FileUtils.getNameWithoutType (sourceFile), new ReaperMediaFiles ());
 
         final Project project = dawProject.getProject ();
-        this.folderTracks = project.tracks;
 
         project.application.name = "Cockos Reaper";
         final List<String> parameters = rootChunk.getParameters ();
@@ -163,13 +144,18 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         convertMetadata (dawProject.getMetadata (), rootChunk);
 
-        this.convertArrangement (project, rootChunk);
-        this.destinationIsBeats = true;
+        convertArrangement (project, rootChunk, beatsAndTime);
+        beatsAndTime.destinationIsBeats = true;
+
+        final FolderStructure structure = new FolderStructure ();
+        structure.folderTracks = new ArrayList<> ();
 
         convertTransport (project, rootChunk);
-        this.convertMarkers (dawProject, rootChunk);
-        this.convertMaster (dawProject, rootChunk);
-        this.convertTracks (dawProject, rootChunk);
+        convertMarkers (dawProject, rootChunk, beatsAndTime);
+        convertMaster (dawProject, rootChunk, structure, beatsAndTime);
+        convertTracks (dawProject, rootChunk, sourceFile.getParentFile (), structure, beatsAndTime);
+
+        project.structure.addAll (structure.folderTracks);
 
         return dawProject;
     }
@@ -293,24 +279,25 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param project The project to fill
      * @param rootChunk The root chunk
+     * @param beatsAndTime The beats and/or time conversion information
      */
-    private void convertArrangement (final Project project, final Chunk rootChunk)
+    private static void convertArrangement (final Project project, final Chunk rootChunk, final BeatsAndTime beatsAndTime)
     {
         final Arrangement arrangement = new Arrangement ();
         project.arrangement = arrangement;
-        arrangement.content = this.arrangementLanes;
+        arrangement.lanes = new Lanes ();
 
         final Optional<Node> timelockModeNode = rootChunk.getChildNode (ReaperTags.PROJECT_TIME_LOCKMODE);
-        this.arrangementLanes.timebase = getIntParam (timelockModeNode, 1) == 0 ? Timebase.seconds : Timebase.beats;
-        this.sourceIsBeats = this.arrangementLanes.timebase == Timebase.beats;
+        arrangement.lanes.timebase = getIntParam (timelockModeNode, 1) == 0 ? Timebase.seconds : Timebase.beats;
+        beatsAndTime.sourceIsBeats = arrangement.lanes.timebase == Timebase.beats;
 
         final Optional<Node> timelockEnvelopeModeNode = rootChunk.getChildNode (ReaperTags.PROJECT_TIME_ENV_LOCKMODE);
-        this.sourceIsEnvelopeBeats = getIntParam (timelockEnvelopeModeNode, 1) == 1;
+        beatsAndTime.sourceIsEnvelopeBeats = getIntParam (timelockEnvelopeModeNode, 1) == 1;
 
         // Time values are always in seconds, indicators above seem to be only for visual
         // information
-        this.sourceIsBeats = false;
-        this.sourceIsEnvelopeBeats = false;
+        beatsAndTime.sourceIsBeats = false;
+        beatsAndTime.sourceIsEnvelopeBeats = false;
     }
 
 
@@ -319,11 +306,12 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param dawProject The dawproject container
      * @param rootChunk The root chunk
+     * @param beatsAndTime The beats and/or time conversion information
      */
-    private void convertMarkers (final DawProjectContainer dawProject, final Chunk rootChunk)
+    private static void convertMarkers (final DawProjectContainer dawProject, final Chunk rootChunk, final BeatsAndTime beatsAndTime)
     {
         final Markers cueMarkers = new Markers ();
-        this.arrangementLanes.lanes.add (cueMarkers);
+        dawProject.getProject ().arrangement.lanes.lanes.add (cueMarkers);
 
         final double beatsPerSecond = dawProject.getBeatsPerSecond ();
         for (final Node node: rootChunk.getChildNodes ())
@@ -338,7 +326,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 name = getParam (node, 0, "0");
 
             final Marker marker = new Marker ();
-            marker.time = this.handleTime (beatsPerSecond, getDoubleParam (node, 1, 0), false);
+            marker.time = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (node, 1, 0), false);
             marker.name = name;
             final int c = getIntParam (node, 4, 0);
             if (c > 0)
@@ -381,35 +369,41 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param dawProject The dawproject container
      * @param rootChunk The root chunk
+     * @param folderStructure The folder structure
+     * @param beatsAndTime The beats and/or time conversion information
      * @throws ParseException Could not parse the master
      */
-    private void convertMaster (final DawProjectContainer dawProject, final Chunk rootChunk) throws ParseException
+    private void convertMaster (final DawProjectContainer dawProject, final Chunk rootChunk, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final Project project = dawProject.getProject ();
 
         final Track masterTrack = new Track ();
-        project.tracks.add (masterTrack);
+        masterTrack.channel = new Channel ();
+        final Channel channel = masterTrack.channel;
+
+        folderStructure.folderTracks.add (masterTrack);
         masterTrack.name = "Master";
-        masterTrack.mixerRole = MixerRole.master;
+
+        channel.role = MixerRole.master;
 
         final int numberOfChannels = getIntParam (rootChunk.getChildNode (ReaperTags.MASTER_NUMBER_OF_CHANNELS), -1);
-        masterTrack.audioChannels = Integer.valueOf (numberOfChannels > 0 ? numberOfChannels : 2);
+        channel.audioChannels = Integer.valueOf (numberOfChannels > 0 ? numberOfChannels : 2);
 
         // Volume & Panorama
         final double [] volPan = getDoubleParams (rootChunk.getChildNode (ReaperTags.MASTER_VOLUME_PAN), -1);
         if (volPan.length >= 1)
         {
-            masterTrack.volume = createRealParameter (Unit.linear, 0.0, 1.0, Math.min (1, valueToDB (volPan[0], 0)));
-            masterTrack.pan = createRealParameter (Unit.linear, -1.0, 1.0, volPan[1]);
+            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, Math.min (1, valueToDB (volPan[0], 0)));
+            channel.pan = createRealParameter (Unit.linear, -1.0, 1.0, volPan[1]);
         }
 
         // Mute & Solo
         final int muteSolo = getIntParam (rootChunk.getChildNode (ReaperTags.MASTER_MUTE_SOLO), -1);
         if (muteSolo > 0)
         {
-            masterTrack.mute = new BoolParameter ();
-            masterTrack.mute.value = Boolean.valueOf ((muteSolo & 1) > 0);
-            masterTrack.solo = Boolean.valueOf ((muteSolo & 2) > 0);
+            channel.mute = new BoolParameter ();
+            channel.mute.value = Boolean.valueOf ((muteSolo & 1) > 0);
+            channel.solo = Boolean.valueOf ((muteSolo & 2) > 0);
         }
 
         // Set track color
@@ -418,12 +412,12 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             masterTrack.color = toHexColor (color);
 
         // Convert all FX devices
-        masterTrack.devices = this.convertDevices (dawProject, masterTrack, rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN);
+        channel.devices = this.convertDevices (dawProject, masterTrack, rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN, folderStructure);
 
-        final Lanes masterTrackLanes = this.createTrackLanes (project, masterTrack);
-        this.convertAutomation (dawProject, masterTrack, rootChunk, ReaperTags.MASTER_VOLUME_ENVELOPE, masterTrack.volume, true);
-        this.convertAutomation (dawProject, masterTrack, rootChunk, ReaperTags.MASTER_PANORAMA_ENVELOPE, masterTrack.pan, true);
-        this.convertTempoAutomation (dawProject, rootChunk, masterTrackLanes);
+        final Lanes masterTrackLanes = createTrackLanes (project, masterTrack, folderStructure);
+        convertAutomation (dawProject, masterTrack, rootChunk, ReaperTags.MASTER_VOLUME_ENVELOPE, channel.volume, true, folderStructure, beatsAndTime);
+        convertAutomation (dawProject, masterTrack, rootChunk, ReaperTags.MASTER_PANORAMA_ENVELOPE, channel.pan, true, folderStructure, beatsAndTime);
+        convertTempoAutomation (dawProject, rootChunk, masterTrackLanes, beatsAndTime);
     }
 
 
@@ -432,27 +426,31 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param dawProject The dawproject container
      * @param rootChunk The root chunk
+     * @param sourcePath The path of the source project file
+     * @param folderStructure The folder structure
+     * @param beatsAndTime The beats and/or time conversion information
      * @throws ParseException Could not parse the tracks
      */
-    private void convertTracks (final DawProjectContainer dawProject, final Chunk rootChunk) throws ParseException
+    private void convertTracks (final DawProjectContainer dawProject, final Chunk rootChunk, final File sourcePath, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final List<Track> tracks = new ArrayList<> ();
         for (final Node node: rootChunk.getChildNodes ())
         {
             if (node instanceof final Chunk subChunk && ReaperTags.CHUNK_TRACK.equals (subChunk.getName ()))
-                tracks.add (this.convertTrack (dawProject, subChunk));
+                tracks.add (this.convertTrack (dawProject, subChunk, sourcePath, folderStructure, beatsAndTime));
         }
 
         // In the second run assign the collected sends
         for (int i = 0; i < tracks.size (); i++)
         {
             final Track track = tracks.get (i);
-            track.sends = this.sendMapping.get (Integer.valueOf (i));
+            track.channel.sends = folderStructure.sendMapping.get (Integer.valueOf (i));
 
-            if (track.sends != null)
+            if (track.channel.sends != null)
             {
-                for (final Send send: track.sends)
-                    this.convertAutomation (dawProject, track, this.sendChunkMapping.get (send), ReaperTags.TRACK_AUX_ENVELOPE, send, true);
+                for (final Send send: track.channel.sends)
+                    // TODO add send panorama automation
+                    convertAutomation (dawProject, track, folderStructure.sendChunkMapping.get (send), ReaperTags.TRACK_AUX_ENVELOPE, send.volume, true, folderStructure, beatsAndTime);
             }
         }
     }
@@ -463,12 +461,17 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param dawProject The dawproject container
      * @param trackChunk The track chunk
+     * @param sourcePath The path of the source project file
+     * @param folderStructure The folder structure
+     * @param beatsAndTime The beats and/or time conversion information
      * @return The created track
      * @throws ParseException Could not parse the track info
      */
-    private Track convertTrack (final DawProjectContainer dawProject, final Chunk trackChunk) throws ParseException
+    private Track convertTrack (final DawProjectContainer dawProject, final Chunk trackChunk, final File sourcePath, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime) throws ParseException
     {
-        final var track = new Track ();
+        final Track track = new Track ();
+        final Channel channel = new Channel ();
+        track.channel = channel;
 
         // Set track name
         final Optional<Node> nameNode = trackChunk.getChildNode (ReaperTags.TRACK_NAME);
@@ -484,18 +487,21 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         // track.loaded - no loaded state in Reaper
 
         final int numberOfChannels = getIntParam (trackChunk.getChildNode (ReaperTags.TRACK_NUMBER_OF_CHANNELS), -1);
-        track.audioChannels = Integer.valueOf (numberOfChannels > 0 ? numberOfChannels : 2);
+        track.channel.audioChannels = Integer.valueOf (numberOfChannels > 0 ? numberOfChannels : 2);
 
         // Create and store Sends for assignment in second phase
         final List<Node> auxReceive = trackChunk.getChildNodes (ReaperTags.TRACK_AUX_RECEIVE);
         if (auxReceive.isEmpty ())
         {
             // Reaper tracks are always hybrid
-            track.timelineRole = new TimelineRole []
+            track.contentType = new ContentType []
             {
-                TimelineRole.notes,
-                TimelineRole.audio
+                ContentType.notes,
+                ContentType.audio
             };
+
+            // TODO check for group status and set mixer role:
+            // track.mixerRole = MixerRole.subMix;
         }
         else
         {
@@ -505,21 +511,21 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 final int mode = getIntParam (sendNode, 1, 0);
                 final double sendVolume = getDoubleParam (sendNode, 2, 1);
 
-                final Send send = Send.create (valueToDB (sendVolume, 12), Unit.linear);
+                final Send send = new Send ();
+                send.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDB (sendVolume, 12));
+                // TODO set panorama
                 send.name = "Send";
-                send.min = Double.valueOf (0);
-                send.max = Double.valueOf (1);
                 send.type = mode == 0 ? SendType.post : SendType.pre;
-                send.destination = track;
-                this.sendMapping.computeIfAbsent (Integer.valueOf (trackIndex), key -> new ArrayList<> ()).add (send);
-                this.sendChunkMapping.put (send, trackChunk);
-
-                track.mixerRole = MixerRole.returnTrack;
-                track.timelineRole = new TimelineRole []
-                {
-                    TimelineRole.audio
-                };
+                send.destination = track.channel;
+                folderStructure.sendMapping.computeIfAbsent (Integer.valueOf (trackIndex), key -> new ArrayList<> ()).add (send);
+                folderStructure.sendChunkMapping.put (send, trackChunk);
             }
+
+            track.channel.role = MixerRole.effectTrack;
+            track.contentType = new ContentType []
+            {
+                ContentType.audio
+            };
         }
 
         // track.destination -> too much options in Reaper to support this with a single destination
@@ -528,19 +534,19 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final double [] volPan = getDoubleParams (trackChunk.getChildNode (ReaperTags.TRACK_VOLUME_PAN), -1);
         if (volPan.length >= 1)
         {
-            track.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDB (volPan[0], 0));
-            track.pan = createRealParameter (Unit.linear, -1.0, 1.0, volPan[1]);
+            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDB (volPan[0], 0));
+            channel.pan = createRealParameter (Unit.linear, -1.0, 1.0, volPan[1]);
         }
 
         // Mute & Solo
         final int [] muteSolo = getIntParams (trackChunk.getChildNode (ReaperTags.TRACK_MUTE_SOLO), -1);
         if (muteSolo.length > 0)
         {
-            track.mute = new BoolParameter ();
-            track.mute.value = Boolean.valueOf (muteSolo[0] > 0);
+            channel.mute = new BoolParameter ();
+            channel.mute.value = Boolean.valueOf (muteSolo[0] > 0);
         }
         if (muteSolo.length > 1)
-            track.solo = Boolean.valueOf (muteSolo[1] > 0);
+            channel.solo = Boolean.valueOf (muteSolo[1] > 0);
 
         // Folder handling
         final Optional<Node> structureNode = trackChunk.getChildNode (ReaperTags.TRACK_STRUCTURE);
@@ -555,44 +561,48 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 // A top level track or track in a folder
                 default:
                 case 0:
-                    this.folderTracks.add (track);
+                    folderStructure.folderTracks.add (track);
                     break;
 
                 // Folder track
                 case 1:
                     // Folder tracks are stored as a folder and a master track, which is inside of
                     // the folder
-                    track.mixerRole = MixerRole.master;
+                    channel.role = MixerRole.master;
 
-                    final FolderTrack folderTrack = new FolderTrack ();
+                    final Track folderTrack = new Track ();
+                    folderTrack.contentType = new ContentType []
+                    {
+                        ContentType.tracks
+                    };
                     folderTrack.name = track.name;
                     track.name = track.name + " Master";
                     folderTrack.comment = track.comment;
                     folderTrack.color = track.color;
-                    this.folderTracks.add (folderTrack);
-                    this.folderStack.add (this.folderTracks);
-                    this.folderTracks = folderTrack.tracks;
-                    this.folderTracks.add (track);
+                    folderStructure.folderTracks.add (folderTrack);
+                    folderStructure.folderStack.add (folderStructure.folderTracks);
+                    folderStructure.folderTracks = folderTrack.tracks;
+                    folderStructure.folderTracks.add (track);
                     break;
 
                 // Last track in the folder
                 case 2:
-                    this.folderTracks.add (track);
-                    if (this.folderStack.isEmpty ())
+                    folderStructure.folderTracks.add (track);
+                    if (folderStructure.folderStack.isEmpty ())
                         throw new ParseException ("Unsound folder structure.", 0);
                     for (int i = 0; i < Math.abs (structure[1]); i++)
-                        this.folderTracks = this.folderStack.removeLast ();
+                        folderStructure.folderTracks = folderStructure.folderStack.removeLast ();
                     break;
             }
         }
 
-        final Lanes trackLanes = this.createTrackLanes (dawProject.getProject (), track);
+        final Lanes trackLanes = createTrackLanes (dawProject.getProject (), track, folderStructure);
 
         // Convert all FX devices
-        track.devices = this.convertDevices (dawProject, track, trackChunk, ReaperTags.CHUNK_FXCHAIN);
+        channel.devices = this.convertDevices (dawProject, track, trackChunk, ReaperTags.CHUNK_FXCHAIN, folderStructure);
 
-        this.convertItems (dawProject, trackLanes, trackChunk);
-        this.convertAutomation (dawProject, track, trackChunk);
+        this.convertItems (dawProject, trackLanes, trackChunk, sourcePath, beatsAndTime);
+        convertAutomation (dawProject, track, trackChunk, folderStructure, beatsAndTime);
 
         return track;
     }
@@ -604,21 +614,23 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param dawProject The dawproject container
      * @param track The track to add the media item clips
      * @param trackChunk The track chunk
+     * @param folderStructure The folder structure
+     * @param beatsAndTime The beats and/or time conversion information
      */
-    private void convertAutomation (final DawProjectContainer dawProject, final Track track, final Chunk trackChunk)
+    private static void convertAutomation (final DawProjectContainer dawProject, final Track track, final Chunk trackChunk, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime)
     {
-        this.convertAutomation (dawProject, track, trackChunk, ReaperTags.TRACK_VOLUME_ENVELOPE, track.volume, true);
-        this.convertAutomation (dawProject, track, trackChunk, ReaperTags.TRACK_PANORAMA_ENVELOPE, track.pan, true);
-        this.convertAutomation (dawProject, track, trackChunk, ReaperTags.TRACK_MUTE_ENVELOPE, track.mute, false);
+        convertAutomation (dawProject, track, trackChunk, ReaperTags.TRACK_VOLUME_ENVELOPE, track.channel.volume, true, folderStructure, beatsAndTime);
+        convertAutomation (dawProject, track, trackChunk, ReaperTags.TRACK_PANORAMA_ENVELOPE, track.channel.pan, true, folderStructure, beatsAndTime);
+        convertAutomation (dawProject, track, trackChunk, ReaperTags.TRACK_MUTE_ENVELOPE, track.channel.mute, false, folderStructure, beatsAndTime);
     }
 
 
-    private void convertAutomation (final DawProjectContainer dawProject, final Track track, final Chunk trackChunk, final String envelopeName, final Parameter parameter, final boolean interpolate)
+    private static void convertAutomation (final DawProjectContainer dawProject, final Track track, final Chunk trackChunk, final String envelopeName, final Parameter parameter, final boolean interpolate, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime)
     {
         final Optional<Node> envelopeNode = trackChunk.getChildNode (envelopeName);
         if (envelopeNode.isPresent () && envelopeNode.get () instanceof final Chunk envelopeChunk)
         {
-            final Lanes lanes = this.trackLanesMap.get (track);
+            final Lanes lanes = folderStructure.trackLanesMap.get (track);
             if (lanes == null)
                 return;
             final Points envelope = new Points ();
@@ -639,7 +651,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             {
                 final Point point = interpolate ? new RealPoint () : new BoolPoint ();
                 final double timeValue = getDoubleParam (pointNode, 0, 0);
-                point.time = Double.valueOf (this.handleTime (beatsPerSecond, timeValue, true));
+                point.time = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, timeValue, true));
 
                 if (interpolate)
                     ((RealPoint) point).value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
@@ -651,7 +663,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     }
 
 
-    private void convertTempoAutomation (final DawProjectContainer dawProject, final Chunk rootChunk, final Lanes masterTrackLanes)
+    private static void convertTempoAutomation (final DawProjectContainer dawProject, final Chunk rootChunk, final Lanes masterTrackLanes, final BeatsAndTime beatsAndTime)
     {
         final Project project = dawProject.getProject ();
 
@@ -673,7 +685,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             {
                 final RealPoint point = new RealPoint ();
                 final double timeValue = getDoubleParam (pointNode, 0, 0);
-                point.time = Double.valueOf (this.handleTime (beatsPerSecond, timeValue, true));
+                point.time = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, timeValue, true));
                 point.value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
                 tempoEnvelope.points.add (point);
 
@@ -714,9 +726,10 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param trackChunk The track chunk
      * @param chunkName The name of the FX list chunk
      * @return The list with the parsed devices
+     * @param folderStructure The folder structure
      * @throws ParseException Could not parse the track info
      */
-    private List<Device> convertDevices (final DawProjectContainer dawProject, final Track track, final Chunk trackChunk, final String chunkName) throws ParseException
+    private List<Device> convertDevices (final DawProjectContainer dawProject, final Track track, final Chunk trackChunk, final String chunkName, final FolderStructure folderStructure) throws ParseException
     {
         final List<Device> devices = new ArrayList<> ();
 
@@ -749,7 +762,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 }
                 else if (ReaperTags.FXCHAIN_PARAMETER_ENVELOPE.equals (nodeName) && node instanceof final Chunk paramEnvChunk)
                 {
-                    this.createAutomationParameters (track, device, paramEnvChunk);
+                    createAutomationParameters (track, device, paramEnvChunk, folderStructure);
                 }
             }
         }
@@ -758,7 +771,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     }
 
 
-    private void createAutomationParameters (final Track track, final Device device, final Chunk paramEnvChunk)
+    private static void createAutomationParameters (final Track track, final Device device, final Chunk paramEnvChunk, final FolderStructure folderStructure)
     {
         final RealParameter param = new RealParameter ();
 
@@ -782,7 +795,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         device.automatedParameters.add (param);
 
-        final Lanes lanes = this.trackLanesMap.get (track);
+        final Lanes lanes = folderStructure.trackLanesMap.get (track);
 
         final Points envelope = new Points ();
         lanes.lanes.add (envelope);
@@ -896,9 +909,11 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param dawProject The dawproject container
      * @param trackLanes The lanes of the track to add the media item clips
      * @param trackChunk The track chunk
+     * @param sourcePath The path of the source project file
+     * @param beatsAndTime The beats and/or time conversion information
      * @throws ParseException Could not parse the track info
      */
-    private void convertItems (final DawProjectContainer dawProject, final Lanes trackLanes, final Chunk trackChunk) throws ParseException
+    private void convertItems (final DawProjectContainer dawProject, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final Clips clips = new Clips ();
         trackLanes.lanes.add (clips);
@@ -911,7 +926,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
             if (node instanceof final Chunk itemChunk)
             {
-                final Clip clip = this.handleClip (dawProject, itemChunk);
+                final Clip clip = this.handleClip (dawProject, itemChunk, sourcePath, beatsAndTime);
                 if (clip != null)
                     clips.clips.add (clip);
             }
@@ -919,12 +934,12 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     }
 
 
-    private Lanes createTrackLanes (final Project project, final Track track)
+    private static Lanes createTrackLanes (final Project project, final Track track, final FolderStructure folderStructure)
     {
         final Lanes trackLanes = new Lanes ();
         trackLanes.track = track;
-        ((Lanes) project.arrangement.content).lanes.add (trackLanes);
-        this.trackLanesMap.put (track, trackLanes);
+        project.arrangement.lanes.lanes.add (trackLanes);
+        folderStructure.trackLanesMap.put (track, trackLanes);
         return trackLanes;
     }
 
@@ -934,28 +949,30 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param dawProject The dawproject container
      * @param itemChunk The item chunk to parse
+     * @param sourcePath The path of the source project file
+     * @param beatsAndTime The beats and/or time conversion information
      * @return The clip
      * @throws ParseException Could not parse a clip
      */
-    private Clip handleClip (final DawProjectContainer dawProject, final Chunk itemChunk) throws ParseException
+    private Clip handleClip (final DawProjectContainer dawProject, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final Clip clip = new Clip ();
 
         final double beatsPerSecond = dawProject.getBeatsPerSecond ();
 
         clip.name = getParam (itemChunk.getChildNode (ReaperTags.ITEM_NAME), null);
-        clip.time = this.handleTime (beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0), false);
-        clip.duration = this.handleTime (beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false);
+        clip.time = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0), false);
+        clip.duration = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false);
 
         // FADEIN 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
         final int [] fadeInParams = getIntParams (itemChunk.getChildNode (ReaperTags.ITEM_FADEIN), 0);
         if (fadeInParams.length > 1 && fadeInParams[1] > 0)
-            clip.fadeInTime = Double.valueOf (this.handleTime (beatsPerSecond, fadeInParams[1], false));
+            clip.fadeInTime = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, fadeInParams[1], false));
 
         // FADEOUT 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
         final int [] fadeOutParams = getIntParams (itemChunk.getChildNode (ReaperTags.ITEM_FADEOUT), 0);
         if (fadeOutParams.length > 1 && fadeOutParams[1] > 0)
-            clip.fadeOutTime = Double.valueOf (this.handleTime (beatsPerSecond, fadeOutParams[1], false));
+            clip.fadeOutTime = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, fadeOutParams[1], false));
 
         final Optional<Node> source = itemChunk.getChildNode (ReaperTags.CHUNK_ITEM_SOURCE);
         if (source.isEmpty ())
@@ -972,11 +989,11 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             switch (clipType)
             {
                 case "MIDI":
-                    this.convertMIDI (dawProject, clip, sourceChunk);
+                    convertMIDI (dawProject, clip, sourceChunk, beatsAndTime);
                     break;
 
                 case "WAVE":
-                    this.convertAudio (dawProject, clip, sourceChunk);
+                    convertAudio (dawProject, clip, sourceChunk, sourcePath);
                     break;
 
                 default:
@@ -998,9 +1015,10 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param dawProject The dawproject container
      * @param clip The clip to fill
      * @param sourceChunk The source chunk which contains the clip data
+     * @param beatsAndTime The beats and/or time conversion information
      * @throws ParseException Could not parse the notes
      */
-    private void convertMIDI (final DawProjectContainer dawProject, final Clip clip, final Chunk sourceChunk) throws ParseException
+    private static void convertMIDI (final DawProjectContainer dawProject, final Clip clip, final Chunk sourceChunk, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final int ticksPerQuarterNote = readTicksPerQuarterNote (sourceChunk);
         if (ticksPerQuarterNote == -1)
@@ -1047,8 +1065,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                     final double position = noteStart.getPosition () / (double) ticksPerQuarterNote;
                     final double length = (midiEvent.getPosition () - noteStart.getPosition ()) / (double) ticksPerQuarterNote;
                     final double beatsPerSecond = dawProject.getBeatsPerSecond ();
-                    note.time = Double.valueOf (this.handleMIDITime (beatsPerSecond, position));
-                    note.duration = Double.valueOf (this.handleMIDITime (beatsPerSecond, length));
+                    note.time = Double.valueOf (handleMIDITime (beatsAndTime, beatsPerSecond, position));
+                    note.duration = Double.valueOf (handleMIDITime (beatsAndTime, beatsPerSecond, length));
                     note.key = noteStart.getData1 ();
                     note.velocity = Double.valueOf (noteStart.getData2 () / 127.0);
                     note.releaseVelocity = Double.valueOf (midiEvent.getData2 () / 127.0);
@@ -1106,9 +1124,10 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param dawProject The dawproject container
      * @param clip The clip to fill
      * @param sourceChunk The audio source chunk
+     * @param sourcePath The path of the source project file
      * @throws ParseException Could not retrieve audio file format
      */
-    private void convertAudio (final DawProjectContainer dawProject, final Clip clip, final Chunk sourceChunk) throws ParseException
+    private static void convertAudio (final DawProjectContainer dawProject, final Clip clip, final Chunk sourceChunk, final File sourcePath) throws ParseException
     {
         final Optional<Node> waveFileOptional = sourceChunk.getChildNode (ReaperTags.SOURCE_FILE);
         if (waveFileOptional.isEmpty ())
@@ -1125,7 +1144,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         audio.file.path = "samples/" + filename;
         audio.algorithm = "raw";
 
-        final File sourceFile = new File (this.sourcePath, filename);
+        final File sourceFile = new File (sourcePath, filename);
         try
         {
             final AudioFileFormat audioFileFormat = AudioSystem.getAudioFileFormat (sourceFile);
@@ -1509,24 +1528,25 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * Converts time to beats, vice versa or not at all depending on the source and destination time
      * base.
      *
+     * @param beatsAndTime The beats and/or time conversion information
      * @param beatsPerSecond Beats per second
      * @param time The value to convert
      * @param isEnvelope True if the data is read from an envelope, which might have a different
      *            time base in Reaper
      * @return The value matching the destination time base
      */
-    private double handleTime (final double beatsPerSecond, final double time, final boolean isEnvelope)
+    private static double handleTime (final BeatsAndTime beatsAndTime, final double beatsPerSecond, final double time, final boolean isEnvelope)
     {
         if (isEnvelope)
         {
-            if (this.sourceIsEnvelopeBeats == this.destinationIsBeats)
+            if (beatsAndTime.sourceIsEnvelopeBeats == beatsAndTime.destinationIsBeats)
                 return time;
-            return this.sourceIsEnvelopeBeats ? toTime (beatsPerSecond, time) : toBeats (beatsPerSecond, time);
+            return beatsAndTime.sourceIsEnvelopeBeats ? toTime (beatsPerSecond, time) : toBeats (beatsPerSecond, time);
         }
 
-        if (this.sourceIsBeats == this.destinationIsBeats)
+        if (beatsAndTime.sourceIsBeats == beatsAndTime.destinationIsBeats)
             return time;
-        return this.sourceIsBeats ? toTime (beatsPerSecond, time) : toBeats (beatsPerSecond, time);
+        return beatsAndTime.sourceIsBeats ? toTime (beatsPerSecond, time) : toBeats (beatsPerSecond, time);
     }
 
 
@@ -1534,13 +1554,14 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * Converts beats (MIDI timing is always in beats) to time if necessary depending on the
      * destination time base.
      *
+     * @param beatsAndTime The beats and/or time conversion information
      * @param beatsPerSecond Beats per second
      * @param time The value to convert
      * @return The value matching the destination time base
      */
-    private double handleMIDITime (final double beatsPerSecond, final double time)
+    private static double handleMIDITime (final BeatsAndTime beatsAndTime, final double beatsPerSecond, final double time)
     {
-        return this.destinationIsBeats ? time : toTime (beatsPerSecond, time);
+        return beatsAndTime.destinationIsBeats ? time : toTime (beatsPerSecond, time);
     }
 
 
@@ -1567,5 +1588,27 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     private static double toTime (final double beatsPerSecond, final double value)
     {
         return value / beatsPerSecond;
+    }
+
+
+    /**
+     * Helper class for creating the folder structure.
+     */
+    private static class FolderStructure
+    {
+        final Deque<List<Track>>       folderStack      = new LinkedList<> ();
+        List<Track>                    folderTracks;
+
+        final Map<Integer, List<Send>> sendMapping      = new HashMap<> ();
+        final Map<Track, Lanes>        trackLanesMap    = new HashMap<> ();
+        final Map<Send, Chunk>         sendChunkMapping = new HashMap<> ();
+    }
+
+
+    private class BeatsAndTime
+    {
+        boolean sourceIsBeats;
+        boolean sourceIsEnvelopeBeats;
+        boolean destinationIsBeats;
     }
 }
