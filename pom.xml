@@ -47,7 +47,7 @@
 		<dependency>
 			<groupId>com.bitwig.open</groupId>
 			<artifactId>dawproject</artifactId>
-			<version>0.1</version>
+			<version>1-SNAPSHOT</version>
 		</dependency>
 	</dependencies>
 

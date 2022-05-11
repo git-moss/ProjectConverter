@@ -22,7 +22,7 @@ import com.bitwig.dawproject.ContentType;
 import com.bitwig.dawproject.ExpressionType;
 import com.bitwig.dawproject.FileReference;
 import com.bitwig.dawproject.Interpolation;
-import com.bitwig.dawproject.Metadata;
+import com.bitwig.dawproject.MetaData;
 import com.bitwig.dawproject.MixerRole;
 import com.bitwig.dawproject.Parameter;
 import com.bitwig.dawproject.Project;
@@ -84,7 +84,7 @@ import java.util.regex.Pattern;
 
 /**
  * Converts a Reaper project file (the already loaded chunks to be more specific) into a dawproject
- * structure.
+ * structure. Needs to be state-less.
  *
  * @author J&uuml;rgen Mo&szlig;graber
  */
@@ -167,7 +167,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param metadata The metadata to fill
      * @param rootChunk The project root chunk
      */
-    private static void convertMetadata (final Metadata metadata, final Chunk rootChunk)
+    private static void convertMetadata (final MetaData metadata, final Chunk rootChunk)
     {
         // Get the author and comment settings from the project (File -> Project settings...)
         final Optional<Node> authorParameter = rootChunk.getChildNode (ReaperTags.PROJECT_AUTHOR);
@@ -183,7 +183,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                         author = author.substring (1, author.length () - 2);
                     metadata.artist = author;
                     metadata.producer = author;
-                    metadata.writer = author;
+                    metadata.composer = author;
+                    metadata.songwriter = author;
                 }
             }
         }
@@ -225,7 +226,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param metadata The metadata to fill
      * @param tagNode A sub node of a render chunk
      */
-    private static void handleMetadataTag (final Metadata metadata, final Node tagNode)
+    private static void handleMetadataTag (final MetaData metadata, final Node tagNode)
     {
         if (!"TAG".equals (tagNode.getName ()))
             return;
@@ -238,13 +239,17 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         if (value.length () > 1 && value.startsWith ("\"") && value.endsWith ("\""))
             value = value.substring (1, value.length () - 2);
 
+        // metadata.arranger - no matching tag in Reaper
+        // metadata.website - no matching tag in Reaper
+
         switch (parameters.get (0))
         {
             case "ID3:COMM":
                 metadata.comment = value;
                 break;
             case "ID3:TCOM":
-                metadata.writer = value;
+                metadata.composer = value;
+                metadata.songwriter = value;
                 break;
             case "ID3:TCON":
                 metadata.genre = value;
@@ -266,6 +271,9 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 break;
             case "ID3:TYER":
                 metadata.year = value;
+                break;
+            case "ID3:TALB":
+                metadata.album = value;
                 break;
             default:
                 // No more supported
@@ -482,7 +490,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         if (color >= 0)
             track.color = toHexColor (color);
 
-        // track.comment - Track comment neither in Bitwig nor Reaper
+        // track.comment - track comment not in Reaper
 
         // track.loaded - no loaded state in Reaper
 
@@ -840,16 +848,14 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final String pluginType = descMatcher.group (1);
         switch (pluginType)
         {
-            case ReaperTags.PLUGIN_VST_2:
-            case ReaperTags.PLUGIN_VST_2_INSTRUMENT:
+            case ReaperTags.PLUGIN_VST_2, ReaperTags.PLUGIN_VST_2_INSTRUMENT:
                 device = new Vst2Plugin ();
                 fileEnding = ".fxp";
                 idPattern = PATTERN_VST2_ID;
                 isVST2 = true;
                 break;
 
-            case ReaperTags.PLUGIN_VST_3:
-            case ReaperTags.PLUGIN_VST_3_INSTRUMENT:
+            case ReaperTags.PLUGIN_VST_3, ReaperTags.PLUGIN_VST_3_INSTRUMENT:
                 device = new Vst3Plugin ();
                 fileEnding = ".vstpreset";
                 idPattern = PATTERN_VST3_ID;
@@ -878,7 +884,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         device.state = new FileReference ();
         final String filename = UUID.randomUUID ().toString () + fileEnding;
-        device.state.isExternal = Boolean.FALSE;
+        device.state.external = Boolean.FALSE;
         device.state.path = "plugins/" + filename;
 
         try
@@ -963,6 +969,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         clip.name = getParam (itemChunk.getChildNode (ReaperTags.ITEM_NAME), null);
         clip.time = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0), false);
         clip.duration = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false);
+
+        // TODO clip.comment -> <ITEM <NOTES -> also in destination format
 
         // FADEIN 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
         final int [] fadeInParams = getIntParams (itemChunk.getChildNode (ReaperTags.ITEM_FADEIN), 0);
@@ -1150,7 +1158,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             final AudioFileFormat audioFileFormat = AudioSystem.getAudioFileFormat (sourceFile);
             final AudioFormat format = audioFileFormat.getFormat ();
             audio.channels = format.getChannels ();
-            audio.samplerate = (int) format.getSampleRate ();
+            audio.sampleRate = (int) format.getSampleRate ();
             audio.duration = getDuration (audioFileFormat);
         }
         catch (final UnsupportedAudioFileException | IOException ex)

@@ -7,7 +7,7 @@ package de.mossgrabers.projectconverter.core;
 import de.mossgrabers.tools.FileUtils;
 
 import com.bitwig.dawproject.DawProject;
-import com.bitwig.dawproject.Metadata;
+import com.bitwig.dawproject.MetaData;
 import com.bitwig.dawproject.Project;
 
 import java.io.File;
@@ -22,7 +22,7 @@ import java.io.IOException;
 public class DawProjectContainer
 {
     private final String      name;
-    private final Metadata    metadata;
+    private final MetaData    metadata;
     private final Project     project;
     private final IMediaFiles mediaFiles;
 
@@ -38,7 +38,7 @@ public class DawProjectContainer
         this.name = name;
         this.mediaFiles = mediaFiles;
 
-        this.metadata = new Metadata ();
+        this.metadata = new MetaData ();
         this.project = new Project ();
     }
 
@@ -75,7 +75,7 @@ public class DawProjectContainer
      *
      * @return The metadata
      */
-    public Metadata getMetadata ()
+    public MetaData getMetadata ()
     {
         return this.metadata;
     }

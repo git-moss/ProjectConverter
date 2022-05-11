@@ -19,7 +19,7 @@ import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.Channel;
 import com.bitwig.dawproject.ContentType;
 import com.bitwig.dawproject.Lane;
-import com.bitwig.dawproject.Metadata;
+import com.bitwig.dawproject.MetaData;
 import com.bitwig.dawproject.MixerRole;
 import com.bitwig.dawproject.Project;
 import com.bitwig.dawproject.Send;
@@ -70,7 +70,7 @@ import java.util.TreeMap;
 
 /**
  * Converts a Reaper project file (the already loaded chunks to be more specific) into a dawproject
- * structure.
+ * structure. Needs to be state-less.
  *
  * @author J&uuml;rgen Mo&szlig;graber
  */
@@ -95,23 +95,6 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         int   type      = 0;
         int   direction = 0;
     }
-
-
-    private final Map<Track, Chunk>   chunkMapping   = new HashMap<> ();
-    private final Map<Channel, Track> channelMapping = new HashMap<> ();
-    private final Map<Track, Integer> trackMapping   = new HashMap<> ();
-
-    // TODO all state must be removed!
-
-    private Lanes                     arrangementLanes;
-    private Track                     masterTrack;
-    private Points                    tempoEnvelope;
-    private Points                    signatureEnvelope;
-    private Double                    tempo;
-    private int                       numerator;
-    private int                       denominator;
-    private final List<String>        audioFiles     = new ArrayList<> ();
-    private boolean                   destinationIsBeats;
 
 
     /**
@@ -143,58 +126,62 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     @Override
     public void write (final DawProjectContainer dawProject, final File outputPath) throws IOException
     {
+        final Parameters parameters = new Parameters ();
+
         final Chunk rootChunk = new Chunk ();
         final Project project = dawProject.getProject ();
 
         setNode (rootChunk, ReaperTags.PROJECT_ROOT, "0.1", "6.33/win64");
 
         convertMetadata (dawProject.getMetadata (), rootChunk);
-        final boolean sourceIsBeats = this.convertArrangement (project);
-        this.convertTransport (project, rootChunk);
+        final boolean sourceIsBeats = convertArrangement (project);
+        convertTransport (project, rootChunk, parameters);
 
         final List<Lane> lanes = project.structure;
         if (lanes == null)
             return;
 
         // Find the master track and handle it separately
+        Track masterTrack = null;
         for (final Lane lane: lanes)
         {
             if (lane instanceof final Track track && track.channel != null && track.channel.role == MixerRole.master)
             {
                 lanes.remove (track);
-                this.masterTrack = track;
+                masterTrack = track;
                 this.convertMaster (dawProject.getMediaFiles (), track, rootChunk);
                 break;
             }
         }
 
-        this.convertTracks (dawProject.getMediaFiles (), lanes, rootChunk);
+        this.convertTracks (dawProject.getMediaFiles (), lanes, rootChunk, parameters);
 
-        this.destinationIsBeats = true;
+        parameters.destinationIsBeats = true;
 
-        final String value = this.destinationIsBeats ? "1" : "0";
+        final String value = parameters.destinationIsBeats ? "1" : "0";
         addNode (rootChunk, ReaperTags.PROJECT_TIME_LOCKMODE, value);
         addNode (rootChunk, ReaperTags.PROJECT_TIME_ENV_LOCKMODE, value);
 
         // Time values are always in seconds, indicators above seem to be only for visual
         // information
-        this.destinationIsBeats = false;
+        parameters.destinationIsBeats = false;
 
-        this.convertLanes (project, sourceIsBeats, rootChunk);
+        this.convertLanes (project, masterTrack, sourceIsBeats, rootChunk, parameters);
 
-        saveProject (rootChunk, dawProject, getOutputPath (dawProject, outputPath));
+        this.saveProject (rootChunk, dawProject, parameters, getOutputPath (dawProject, outputPath));
     }
 
 
     /**
      * Stores the filled Reaper structure into the given file.
-     * 
+     *
      * @param rootChunk The root chunk of the Reaper project to store
      * @param dawProject The name of the project file to store to
+     * @param parameters The parameters
      * @param destinationPath The path to store the project and audio files to
      * @throws IOException Could not write the file
      */
-    private void saveProject (final Chunk rootChunk, final DawProjectContainer dawProject, final File destinationPath) throws IOException
+    private void saveProject (final Chunk rootChunk, final DawProjectContainer dawProject, final Parameters parameters, final File destinationPath) throws IOException
     {
         if (!destinationPath.mkdir ())
         {
@@ -213,7 +200,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
         // Store all referenced wave files
         final IMediaFiles mediaFiles = dawProject.getMediaFiles ();
-        for (final String audioFile: this.audioFiles)
+        for (final String audioFile: parameters.audioFiles)
         {
             final String name = new File (audioFile).getName ();
             final File sampleOutputFile = new File (destinationPath, name);
@@ -227,11 +214,11 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     /**
      * Assigns the metadata to different Reaper settings.
-     * 
+     *
      * @param metadata The metadata to read from
      * @param rootChunk The root chunk to add the information
      */
-    private static void convertMetadata (final Metadata metadata, final Chunk rootChunk)
+    private static void convertMetadata (final MetaData metadata, final Chunk rootChunk)
     {
         // Only one Authors field in Reaper
         final StringBuilder sb = new StringBuilder ();
@@ -243,11 +230,17 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 sb.append (", ");
             sb.append (metadata.producer);
         }
-        if (metadata.writer != null && !metadata.writer.isBlank ())
+        if (metadata.composer != null && !metadata.composer.isBlank ())
         {
             if (!sb.isEmpty ())
                 sb.append (", ");
-            sb.append (metadata.writer);
+            sb.append (metadata.composer);
+        }
+        if (metadata.songwriter != null && !metadata.songwriter.isBlank ())
+        {
+            if (!sb.isEmpty ())
+                sb.append (", ");
+            sb.append (metadata.songwriter);
         }
 
         final String author = sb.toString ();
@@ -267,8 +260,10 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final Chunk renderChunk = addChunk (rootChunk, ReaperTags.PROJECT_RENDER_METADATA);
         if (metadata.comment != null)
             addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:COMM", metadata.comment.replace ("\r", "").replace ("\n", " "));
-        if (metadata.writer != null)
-            addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TCOM", metadata.writer);
+        if (metadata.composer != null)
+            addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TCOM", metadata.composer);
+        if (metadata.songwriter != null)
+            addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TCOM", metadata.songwriter);
         if (metadata.genre != null)
             addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TCON", metadata.genre);
         if (metadata.copyright != null)
@@ -283,48 +278,49 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TPE2", metadata.originalArtist);
         if (metadata.year != null)
             addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TYER", metadata.year);
+        if (metadata.album != null)
+            addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TALB", metadata.album);
     }
 
 
     /**
      * Assigns the Arrangement data to different Reaper settings.
-     * 
+     *
      * @param project The project to read from
      * @return True if the time base is in beats otherwise seconds
      */
-    private boolean convertArrangement (final Project project)
+    private static boolean convertArrangement (final Project project)
     {
         final Arrangement arrangement = project.arrangement;
         if (arrangement == null || arrangement.lanes == null)
             return true;
-        this.arrangementLanes = arrangement.lanes;
-
         return updateIsBeats (arrangement.lanes, true);
     }
 
 
     /**
      * Assigns the Transport data to different Reaper settings.
-     * 
+     *
      * @param project The project to read from
      * @param rootChunk The root chunk to add the information
+     * @param parameters The parameters
      */
-    private void convertTransport (final Project project, final Chunk rootChunk)
+    private static void convertTransport (final Project project, final Chunk rootChunk, final Parameters parameters)
     {
         final Transport transport = project.transport;
         if (transport == null)
             return;
 
-        this.tempo = transport.tempo == null ? Double.valueOf (120) : transport.tempo.value;
-        this.numerator = transport.timeSignature == null || transport.timeSignature.numerator == null ? 4 : transport.timeSignature.numerator.intValue ();
-        this.denominator = transport.timeSignature == null || transport.timeSignature.denominator == null ? 4 : transport.timeSignature.denominator.intValue ();
-        addNode (rootChunk, ReaperTags.PROJECT_TEMPO, this.tempo.toString (), Integer.toString (this.numerator), Integer.toString (this.denominator));
+        parameters.tempo = transport.tempo == null ? Double.valueOf (120) : transport.tempo.value;
+        parameters.numerator = transport.timeSignature == null || transport.timeSignature.numerator == null ? 4 : transport.timeSignature.numerator.intValue ();
+        parameters.denominator = transport.timeSignature == null || transport.timeSignature.denominator == null ? 4 : transport.timeSignature.denominator.intValue ();
+        addNode (rootChunk, ReaperTags.PROJECT_TEMPO, parameters.tempo.toString (), Integer.toString (parameters.numerator), Integer.toString (parameters.denominator));
     }
 
 
     /**
      * Assigns the Master track data to different Reaper settings.
-     * 
+     *
      * @param mediaFiles Access to additional media files
      * @param masterTrack The master track
      * @param rootChunk The root chunk to add the information
@@ -360,26 +356,27 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     /**
      * Assigns the data of all Tracks to different Reaper settings.
-     * 
+     *
      * @param mediaFiles Access to additional media files
      * @param lanes The lanes which contain the tracks to convert
      * @param rootChunk The root chunk to add the information
+     * @param parameters The parameters
      * @throws IOException Units must be linear
      */
-    private void convertTracks (final IMediaFiles mediaFiles, final List<Lane> lanes, final Chunk rootChunk) throws IOException
+    private void convertTracks (final IMediaFiles mediaFiles, final List<Lane> lanes, final Chunk rootChunk, final Parameters parameters) throws IOException
     {
         final List<TrackInfo> flatTracks = new ArrayList<> ();
-        this.createTrackStructure (getTracks (lanes), flatTracks, true);
+        this.createTrackStructure (getTracks (lanes), flatTracks, true, parameters);
 
         for (int i = 0; i < flatTracks.size (); i++)
-            this.convertTrack (mediaFiles, flatTracks, i, rootChunk);
+            this.convertTrack (mediaFiles, flatTracks, i, rootChunk, parameters);
 
         // Set sends and create automation
         for (final TrackInfo trackInfo: flatTracks)
         {
             final Track track = trackInfo.track;
             if (track != null)
-                this.convertSends (track);
+                convertSends (track, parameters);
         }
     }
 
@@ -388,9 +385,10 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * Convert all sends of the track.
      *
      * @param track The track
+     * @param parameters The parameters
      * @throws IOException Units must be linear
      */
-    private void convertSends (final Track track) throws IOException
+    private static void convertSends (final Track track, final Parameters parameters) throws IOException
     {
         if (track.channel == null || track.channel.sends == null)
             return;
@@ -400,11 +398,11 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 continue;
             if (send.volume.unit != Unit.linear)
                 throw new IOException (ONLY_LINEAR);
-            final Track destinationTrack = this.channelMapping.get (send.destination);
+            final Track destinationTrack = parameters.channelMapping.get (send.destination);
             if (destinationTrack != null)
             {
-                final Chunk auxChunk = this.chunkMapping.get (destinationTrack);
-                final Integer index = this.trackMapping.get (track);
+                final Chunk auxChunk = parameters.chunkMapping.get (destinationTrack);
+                final Integer index = parameters.trackMapping.get (track);
                 if (auxChunk != null && index != null)
                 {
                     final String mode = send.type == null || send.type == SendType.post ? "0" : "1";
@@ -419,7 +417,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     /**
      * Assigns the data of all Devices of a track to different Reaper settings.
-     * 
+     *
      * @param mediaFiles Access to additional media files
      * @param devices The devices to convert
      * @param parentChunk The chunk where to add the data
@@ -465,15 +463,15 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     /**
      * Convert a single track.
-     * 
-     * @param mediaFiles
      *
+     * @param mediaFiles All media files, needed for the device states
      * @param flatTracks All flattened
      * @param trackIndex The index of the track to convert
      * @param rootChunk The root chunk to add the information
+     * @param parameters The parameters
      * @throws IOException Error converting the track
      */
-    private void convertTrack (final IMediaFiles mediaFiles, final List<TrackInfo> flatTracks, final int trackIndex, final Chunk rootChunk) throws IOException
+    private void convertTrack (final IMediaFiles mediaFiles, final List<TrackInfo> flatTracks, final int trackIndex, final Chunk rootChunk, final Parameters parameters) throws IOException
     {
         final TrackInfo trackInfo = flatTracks.get (trackIndex);
         final Chunk trackChunk = addChunk (rootChunk, ReaperTags.CHUNK_TRACK);
@@ -484,8 +482,8 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         if (track == null || track.channel == null)
             return;
 
-        this.chunkMapping.put (track, trackChunk);
-        this.trackMapping.put (track, Integer.valueOf (trackIndex));
+        parameters.chunkMapping.put (track, trackChunk);
+        parameters.trackMapping.put (track, Integer.valueOf (trackIndex));
 
         final Channel channel = track.channel;
 
@@ -522,8 +520,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param parentDuration The duration of the parent clip
      * @param parentOffset An offset to the play start in the clip
      * @param sourceIsBeats If true the source time base is in beats otherwise seconds
+     * @param parameters The parameters
      */
-    private void convertItems (final Chunk trackChunk, final Clips clips, final double parentPosition, final double parentDuration, final double parentOffset, final boolean sourceIsBeats)
+    private void convertItems (final Chunk trackChunk, final Clips clips, final double parentPosition, final double parentDuration, final double parentOffset, final boolean sourceIsBeats, final Parameters parameters)
     {
         if (clips.clips == null)
             return;
@@ -535,7 +534,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             // Cannot group clips in clips in Reaper, therefore only create the most inner clips
             if (clip.content instanceof final Clips groupedClips)
             {
-                this.convertItems (trackChunk, groupedClips, parentPosition + clip.time, clip.duration, clip.playStart == null ? 0 : clip.playStart.doubleValue (), isBeats);
+                this.convertItems (trackChunk, groupedClips, parentPosition + clip.time, clip.duration, clip.playStart == null ? 0 : clip.playStart.doubleValue (), isBeats, parameters);
                 continue;
             }
 
@@ -564,26 +563,26 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             if (parentDuration != -1 && duration > parentDuration)
                 duration = parentDuration;
             start += parentPosition;
-            addNode (itemChunk, ReaperTags.ITEM_POSITION, Double.toString (this.handleTime (start, isBeats)));
-            addNode (itemChunk, ReaperTags.ITEM_LENGTH, Double.toString (this.handleTime (duration, isBeats)));
-            addNode (itemChunk, ReaperTags.ITEM_SAMPLE_OFFSET, Double.toString (this.handleTime (offset, isBeats)));
+            addNode (itemChunk, ReaperTags.ITEM_POSITION, Double.toString (handleTime (start, isBeats, parameters)));
+            addNode (itemChunk, ReaperTags.ITEM_LENGTH, Double.toString (handleTime (duration, isBeats, parameters)));
+            addNode (itemChunk, ReaperTags.ITEM_SAMPLE_OFFSET, Double.toString (handleTime (offset, isBeats, parameters)));
 
             // FADEIN 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
-            addNode (itemChunk, ReaperTags.ITEM_FADEIN, "1", this.handleTime (clip.fadeInTime, isBeats).toString (), "0");
+            addNode (itemChunk, ReaperTags.ITEM_FADEIN, "1", handleTime (clip.fadeInTime, isBeats, parameters).toString (), "0");
 
             // FADEOUT 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
-            addNode (itemChunk, ReaperTags.ITEM_FADEOUT, "1", this.handleTime (clip.fadeOutTime, isBeats).toString (), "0");
+            addNode (itemChunk, ReaperTags.ITEM_FADEOUT, "1", handleTime (clip.fadeOutTime, isBeats, parameters).toString (), "0");
 
             if (clip.content instanceof final Notes notes)
-                this.convertMIDI (clip, notes, itemChunk, sourceIsBeats);
+                convertMIDI (clip, notes, itemChunk, sourceIsBeats, parameters);
             else if (clip.content instanceof final Audio audio)
-                this.convertAudio (audio, itemChunk, 1);
+                convertAudio (audio, itemChunk, 1, parameters);
             else if (clip.content instanceof final Warps warps)
             {
-                final double playrate = this.calcPlayrate (warps.events, sourceIsBeats);
+                final double playrate = calcPlayrate (warps.events, sourceIsBeats, parameters);
 
                 if (warps.content instanceof final Audio audio)
-                    this.convertAudio (audio, itemChunk, playrate);
+                    convertAudio (audio, itemChunk, playrate, parameters);
             }
             else
                 this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", clip.content.getClass ().getName ());
@@ -597,9 +596,10 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      *
      * @param events The warp events
      * @param sourceIsBeats True if the time is in beats otherwise in seconds
+     * @param parameters The parameters to add to the node
      * @return The play rate (1 = normal playback, < 1 slower, > 1 faster)
      */
-    private double calcPlayrate (final List<Warp> events, final boolean sourceIsBeats)
+    private static double calcPlayrate (final List<Warp> events, final boolean sourceIsBeats, final Parameters parameters)
     {
         // Can only map a simple warp to one play rate
         if (events.size () < 2)
@@ -613,7 +613,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         // Calculate play rate from the 2nd, if there are more warps the result will also not be
         // correct
         final Warp warp2 = events.get (1);
-        final double duration = sourceIsBeats ? this.toTime (warp2.time) : warp2.time;
+        final double duration = sourceIsBeats ? toTime (warp2.time, parameters.tempo) : warp2.time;
         return warp2.warped / duration;
     }
 
@@ -624,14 +624,15 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param audio The audio file
      * @param itemChunk The item chunk
      * @param playrate The play rate of the media item
+     * @param parameters The parameters to add to the node
      */
-    private void convertAudio (final Audio audio, final Chunk itemChunk, final double playrate)
+    private static void convertAudio (final Audio audio, final Chunk itemChunk, final double playrate, final Parameters parameters)
     {
         if (audio.file == null)
             return;
 
         final File sourceFile = new File (audio.file.path);
-        this.audioFiles.add (audio.file.path);
+        parameters.audioFiles.add (audio.file.path);
 
         // field 1, float, play rate
         // field 2, integer (boolean), preserve pitch while changing rate
@@ -651,8 +652,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param notes The notes of the clip
      * @param itemChunk The chunk of the media item to fill
      * @param sourceIsBeats True if the time is in beats otherwise in seconds
+     * @param parameters The parameters to add to the node
      */
-    private void convertMIDI (final Clip clip, final Notes notes, final Chunk itemChunk, final boolean sourceIsBeats)
+    private static void convertMIDI (final Clip clip, final Notes notes, final Chunk itemChunk, final boolean sourceIsBeats, final Parameters parameters)
     {
         final Chunk sourceChunk = addChunk (itemChunk, ReaperTags.CHUNK_ITEM_SOURCE, "MIDI");
         // Prevent note repetition if last note does not end at the clip end
@@ -666,8 +668,8 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         for (final Note note: notes.notes)
         {
             // Time is always in beats for MIDI events!
-            final long startPosition = (long) ((sourceIsBeats ? note.time.doubleValue () : this.toBeats (note.time.doubleValue ())) * TICKS_PER_QUARTER_NOTE);
-            final long endPosition = startPosition + (long) ((sourceIsBeats ? note.duration.doubleValue () : this.toBeats (note.duration.doubleValue ())) * TICKS_PER_QUARTER_NOTE);
+            final long startPosition = (long) ((sourceIsBeats ? note.time.doubleValue () : toBeats (note.time.doubleValue (), parameters.tempo)) * TICKS_PER_QUARTER_NOTE);
+            final long endPosition = startPosition + (long) ((sourceIsBeats ? note.duration.doubleValue () : toBeats (note.duration.doubleValue (), parameters.tempo)) * TICKS_PER_QUARTER_NOTE);
             final int velocity = note.velocity == null ? 0 : (int) (note.velocity.doubleValue () * 127.0);
             final int releaseVelocity = note.releaseVelocity == null ? 0 : (int) (note.releaseVelocity.doubleValue () * 127.0);
 
@@ -694,17 +696,19 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     /**
      * Convert all lanes. Assigns the Markers data to different Reaper settings.
-     * 
+     *
      * @param project The project to read from
+     * @param masterTrack The master track
      * @param sourceIsBeats If true the source time base is in beats otherwise seconds
      * @param rootChunk The root chunk to add the information
+     * @param parameters
      */
-    private void convertLanes (final Project project, final boolean sourceIsBeats, final Chunk rootChunk)
+    private void convertLanes (final Project project, final Track masterTrack, final boolean sourceIsBeats, final Chunk rootChunk, final Parameters parameters)
     {
-        if (this.arrangementLanes == null || this.arrangementLanes.lanes == null)
+        if (project.arrangement == null || project.arrangement.lanes == null)
             return;
 
-        for (final Timeline timeline: this.arrangementLanes.lanes)
+        for (final Timeline timeline: project.arrangement.lanes.lanes)
         {
             if (timeline instanceof final Markers markers)
             {
@@ -716,15 +720,18 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 for (int i = 0; i < markers.markers.size (); i++)
                 {
                     final Marker marker = markers.markers.get (i);
-                    final double position = this.handleTime (marker.time, isBeats);
+                    final double position = handleTime (marker.time, isBeats, parameters);
                     final int color = marker.color == null ? 0 : fromHexColor (marker.color);
+
+                    // marker.comment - Marker comment not in Reaper
+
                     addNode (rootChunk, ReaperTags.PROJECT_MARKER, Integer.toString (i), Double.toString (position), marker.name, "0", Integer.toString (color));
                 }
             }
             else if (timeline instanceof final Lanes lanes && lanes.track != null)
             {
                 final Track track = lanes.track;
-                final Chunk trackChunk = track == this.masterTrack ? rootChunk : this.chunkMapping.get (track);
+                final Chunk trackChunk = track == masterTrack ? rootChunk : parameters.chunkMapping.get (track);
                 if (trackChunk != null)
                 {
                     for (final Timeline trackTimeline: lanes.lanes)
@@ -737,15 +744,15 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                         // clips/clip/notes
                         // points/target
                         if (trackTimeline instanceof final Points trackEnvelope)
-                            this.handleEnvelopeParameter (project, track, trackChunk, trackEnvelope, isBeats);
+                            handleEnvelopeParameter (project, masterTrack, track, trackChunk, trackEnvelope, isBeats, parameters);
                         else if (trackTimeline instanceof final Clips clips)
-                            this.convertItems (trackChunk, clips, 0, -1, 0, isBeats);
+                            this.convertItems (trackChunk, clips, 0, -1, 0, isBeats, parameters);
                     }
                 }
             }
         }
 
-        this.createTempoSignatureEnvelope (sourceIsBeats, rootChunk);
+        createTempoSignatureEnvelope (sourceIsBeats, rootChunk, parameters);
     }
 
 
@@ -754,36 +761,37 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      *
      * @param sourceIsBeats If true the source time base is in beats otherwise seconds
      * @param rootChunk The root chunk to add the information
+     * @param parameters The parameters to add to the node
      */
-    private void createTempoSignatureEnvelope (final boolean sourceIsBeats, final Chunk rootChunk)
+    private static void createTempoSignatureEnvelope (final boolean sourceIsBeats, final Chunk rootChunk, final Parameters parameters)
     {
         // Combine tempo and signature automation envelopes
         final Map<Double, List<Point>> combined = new TreeMap<> ();
-        if (this.tempoEnvelope != null)
+        if (parameters.tempoEnvelope != null)
         {
-            final boolean isBeats = updateIsBeats (this.tempoEnvelope, sourceIsBeats);
-            for (final Point point: this.tempoEnvelope.points)
-                combined.put (this.handleTime (point.time, isBeats), new ArrayList<> (Collections.singleton (point)));
+            final boolean isBeats = updateIsBeats (parameters.tempoEnvelope, sourceIsBeats);
+            for (final Point point: parameters.tempoEnvelope.points)
+                combined.put (handleTime (point.time, isBeats, parameters), new ArrayList<> (Collections.singleton (point)));
         }
-        if (this.signatureEnvelope != null)
+        if (parameters.signatureEnvelope != null)
         {
-            final boolean isBeats = updateIsBeats (this.signatureEnvelope, sourceIsBeats);
-            for (final Point point: this.signatureEnvelope.points)
-                combined.computeIfAbsent (this.handleTime (point.time, isBeats), key -> new ArrayList<> (Collections.singleton (new RealPoint ()))).add (point);
+            final boolean isBeats = updateIsBeats (parameters.signatureEnvelope, sourceIsBeats);
+            for (final Point point: parameters.signatureEnvelope.points)
+                combined.computeIfAbsent (handleTime (point.time, isBeats, parameters), key -> new ArrayList<> (Collections.singleton (new RealPoint ()))).add (point);
         }
         if (combined.isEmpty ())
             return;
 
         final Chunk tempoChunk = addChunk (rootChunk, ReaperTags.PROJECT_TEMPO_ENVELOPE);
 
-        Double tempoValue = this.tempo;
-        int numeratorValue = this.numerator;
-        int denominatorValue = this.denominator;
+        Double tempoValue = parameters.tempo;
+        int numeratorValue = parameters.numerator;
+        int denominatorValue = parameters.denominator;
 
         for (final Entry<Double, List<Point>> e: combined.entrySet ())
         {
             final Double time = e.getKey ();
-            final Double position = this.handleTime (time, sourceIsBeats);
+            final Double position = handleTime (time, sourceIsBeats, parameters);
             final List<Point> points = e.getValue ();
             final RealPoint tempoPoint = (RealPoint) points.get (0);
             if (tempoPoint.value != null)
@@ -800,7 +808,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     }
 
 
-    private void handleEnvelopeParameter (final Project project, final Track track, final Chunk trackChunk, final Points envelope, final boolean sourceIsBeats)
+    private static void handleEnvelopeParameter (final Project project, final Track masterTrack, final Track track, final Chunk trackChunk, final Points envelope, final boolean sourceIsBeats, final Parameters parameters)
     {
         if (track.channel == null)
             return;
@@ -809,23 +817,23 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         // Track Volume Parameter
         if (channel.volume == envelope.target.parameter)
         {
-            final String envelopeName = track == this.masterTrack ? ReaperTags.MASTER_VOLUME_ENVELOPE : ReaperTags.TRACK_VOLUME_ENVELOPE;
-            this.createEnvelope (trackChunk, envelopeName, envelope, true, sourceIsBeats);
+            final String envelopeName = track == masterTrack ? ReaperTags.MASTER_VOLUME_ENVELOPE : ReaperTags.TRACK_VOLUME_ENVELOPE;
+            createEnvelope (trackChunk, envelopeName, envelope, true, sourceIsBeats, parameters);
             return;
         }
 
         // Track Panorama Parameter
         if (channel.pan == envelope.target.parameter)
         {
-            final String envelopeName = track == this.masterTrack ? ReaperTags.MASTER_PANORAMA_ENVELOPE : ReaperTags.TRACK_PANORAMA_ENVELOPE;
-            this.createEnvelope (trackChunk, envelopeName, envelope, true, sourceIsBeats);
+            final String envelopeName = track == masterTrack ? ReaperTags.MASTER_PANORAMA_ENVELOPE : ReaperTags.TRACK_PANORAMA_ENVELOPE;
+            createEnvelope (trackChunk, envelopeName, envelope, true, sourceIsBeats, parameters);
             return;
         }
 
         // Track Mute Parameter
         if (channel.mute == envelope.target.parameter)
         {
-            this.createEnvelope (trackChunk, ReaperTags.TRACK_MUTE_ENVELOPE, envelope, false, sourceIsBeats);
+            createEnvelope (trackChunk, ReaperTags.TRACK_MUTE_ENVELOPE, envelope, false, sourceIsBeats, parameters);
             return;
         }
 
@@ -836,12 +844,12 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             {
                 if (send.volume == envelope.target.parameter)
                 {
-                    final Track destinationTrack = this.channelMapping.get (send.destination);
+                    final Track destinationTrack = parameters.channelMapping.get (send.destination);
                     if (destinationTrack != null)
                     {
-                        final Chunk auxChunk = this.chunkMapping.get (destinationTrack);
+                        final Chunk auxChunk = parameters.chunkMapping.get (destinationTrack);
                         if (auxChunk != null)
-                            this.createEnvelope (auxChunk, ReaperTags.TRACK_AUX_ENVELOPE, envelope, true, sourceIsBeats);
+                            createEnvelope (auxChunk, ReaperTags.TRACK_AUX_ENVELOPE, envelope, true, sourceIsBeats, parameters);
                     }
                     return;
                 }
@@ -854,13 +862,13 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         if (transport == null)
             return;
         if (transport.tempo == envelope.target.parameter)
-            this.tempoEnvelope = envelope;
+            parameters.tempoEnvelope = envelope;
         else if (transport.timeSignature == envelope.target.parameter)
-            this.signatureEnvelope = envelope;
+            parameters.signatureEnvelope = envelope;
     }
 
 
-    private void createEnvelope (final Chunk trackChunk, final String envelopeName, final Points trackEnvelope, final boolean interpolate, final boolean sourceIsBeats)
+    private static void createEnvelope (final Chunk trackChunk, final String envelopeName, final Points trackEnvelope, final boolean interpolate, final boolean sourceIsBeats, final Parameters parameters)
     {
         final Chunk envelopeChunk = addChunk (trackChunk, envelopeName);
 
@@ -871,7 +879,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             if (point.time == null)
                 continue;
 
-            final Double position = this.handleTime (point.time, isBeats);
+            final Double position = handleTime (point.time, isBeats, parameters);
 
             String value = null;
             // Note: The unit of the value must already been matched at the parameter itself
@@ -913,8 +921,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param tracks The current list of sub-folders and -tracks.
      * @param flatTracks The list with all flat tracks so far
      * @param isTop True if this is the top level
+     * @param parameters The parameters
      */
-    private void createTrackStructure (final List<Track> tracks, final List<TrackInfo> flatTracks, final boolean isTop)
+    private void createTrackStructure (final List<Track> tracks, final List<TrackInfo> flatTracks, final boolean isTop, final Parameters parameters)
     {
         for (final Track track: tracks)
         {
@@ -922,7 +931,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             flatTracks.add (trackInfo);
 
             if (track.channel != null)
-                this.channelMapping.put (track.channel, track);
+                parameters.channelMapping.put (track.channel, track);
 
             // Is it a plain track?
             if (!hasContent (ContentType.tracks, track.contentType))
@@ -958,7 +967,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 trackInfo.direction = 1;
             }
 
-            this.createTrackStructure (children, flatTracks, false);
+            this.createTrackStructure (children, flatTracks, false, parameters);
         }
 
         // Increase the number of levels to move up, but do not move out of the top level
@@ -1121,17 +1130,17 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     }
 
 
-    private Double handleTime (final Double time, final boolean sourceIsBeats)
+    private static Double handleTime (final Double time, final boolean sourceIsBeats, final Parameters parameters)
     {
-        return Double.valueOf (time == null ? 0 : this.handleTime (time.doubleValue (), sourceIsBeats));
+        return Double.valueOf (time == null ? 0 : handleTime (time.doubleValue (), sourceIsBeats, parameters));
     }
 
 
-    private double handleTime (final double time, final boolean sourceIsBeats)
+    private static double handleTime (final double time, final boolean sourceIsBeats, final Parameters parameters)
     {
-        if (sourceIsBeats == this.destinationIsBeats)
+        if (sourceIsBeats == parameters.destinationIsBeats)
             return time;
-        return sourceIsBeats ? this.toTime (time) : this.toBeats (time);
+        return sourceIsBeats ? toTime (time, parameters.tempo) : toBeats (time, parameters.tempo);
     }
 
 
@@ -1145,11 +1154,12 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * Convert the time value to beats.
      *
      * @param timeInSeconds The value in time
+     * @param tempo The tempo
      * @return The value in beats
      */
-    private double toBeats (final double timeInSeconds)
+    private static double toBeats (final double timeInSeconds, final Double tempo)
     {
-        final double beatsPerSecond = this.tempo.doubleValue () / 60.0;
+        final double beatsPerSecond = tempo.doubleValue () / 60.0;
         return beatsPerSecond * timeInSeconds;
     }
 
@@ -1158,11 +1168,12 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * Convert the beats value to time.
      *
      * @param timeInBeats The value in beats
+     * @param tempo The tempo
      * @return The value in time
      */
-    private double toTime (final double timeInBeats)
+    private static double toTime (final double timeInBeats, final Double tempo)
     {
-        final double beatsPerSecond = this.tempo.doubleValue () / 60.0;
+        final double beatsPerSecond = tempo.doubleValue () / 60.0;
         return timeInBeats / beatsPerSecond;
     }
 
@@ -1183,9 +1194,26 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final List<Track> tracks = new ArrayList<> ();
         for (final Lane lane: lanes)
         {
-            if (lane instanceof Track track)
+            if (lane instanceof final Track track)
                 tracks.add (track);
         }
         return tracks;
+    }
+
+
+    private static class Parameters
+    {
+        private Points                    tempoEnvelope;
+        private Points                    signatureEnvelope;
+        private Double                    tempo;
+        private int                       numerator;
+        private int                       denominator;
+        private final List<String>        audioFiles     = new ArrayList<> ();
+        private boolean                   destinationIsBeats;
+
+        private final Map<Track, Chunk>   chunkMapping   = new HashMap<> ();
+        private final Map<Channel, Track> channelMapping = new HashMap<> ();
+        private final Map<Track, Integer> trackMapping   = new HashMap<> ();
+
     }
 }
