@@ -48,7 +48,7 @@ import java.util.Optional;
 /**
  * The project converter application.
  *
- * @author J&uuml;rgen Mo&szlig;graber
+ * @author Jürgen Moßgraber
  */
 public class ProjectConverterApp extends AbstractFrame implements INotifier
 {

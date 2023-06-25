@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2022
+// (c) 2021-2023
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.format.reaper;
@@ -17,7 +17,7 @@ import java.util.Map;
 /**
  * Access to additional Reaper media files. Audio and plugin states.
  *
- * @author J&uuml;rgen Mo&szlig;graber
+ * @author Jürgen Moßgraber
  */
 public class ReaperMediaFiles implements IMediaFiles
 {

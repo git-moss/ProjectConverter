@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2022
+// (c) 2021-2023
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.format.reaper;
@@ -45,7 +45,7 @@ import com.bitwig.dawproject.timeline.Point;
 import com.bitwig.dawproject.timeline.Points;
 import com.bitwig.dawproject.timeline.RealPoint;
 import com.bitwig.dawproject.timeline.TimeSignaturePoint;
-import com.bitwig.dawproject.timeline.Timebase;
+import com.bitwig.dawproject.timeline.TimeUnit;
 import com.bitwig.dawproject.timeline.Timeline;
 import com.bitwig.dawproject.timeline.Warp;
 import com.bitwig.dawproject.timeline.Warps;
@@ -72,7 +72,7 @@ import java.util.TreeMap;
  * Converts a Reaper project file (the already loaded chunks to be more specific) into a dawproject
  * structure. Needs to be state-less.
  *
- * @author J&uuml;rgen Mo&szlig;graber
+ * @author Jürgen Moßgraber
  */
 public class ReaperDestinationFormat extends AbstractCoreTask implements IDestinationFormat
 {
@@ -436,6 +436,8 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             if (device.state == null)
                 continue;
 
+            // TODO Support CLAP plugins
+
             if (!(device instanceof Vst2Plugin) && !(device instanceof Vst3Plugin))
             {
                 // Note: AU plugins can be supported here but only necessary if there is another
@@ -607,14 +609,14 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
         // First warp must be at the beginning
         final Warp warp = events.get (0);
-        if (warp.time != 0 || warp.warped != 0)
+        if (warp.time != 0 || warp.contentTime != 0)
             return 1;
 
         // Calculate play rate from the 2nd, if there are more warps the result will also not be
         // correct
         final Warp warp2 = events.get (1);
         final double duration = sourceIsBeats ? toTime (warp2.time, parameters.tempo) : warp2.time;
-        return warp2.warped / duration;
+        return warp2.contentTime / duration;
     }
 
 
@@ -1146,7 +1148,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     private static boolean updateIsBeats (final Timeline timeline, final boolean isBeats)
     {
-        return timeline.timebase == null ? isBeats : timeline.timebase == Timebase.beats;
+        return timeline.timeUnit == null ? isBeats : timeline.timeUnit == TimeUnit.beats;
     }
 
 

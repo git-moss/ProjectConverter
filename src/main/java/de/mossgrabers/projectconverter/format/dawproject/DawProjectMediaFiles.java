@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2022
+// (c) 2021-2023
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.format.dawproject;
@@ -19,7 +19,7 @@ import java.util.Map;
 /**
  * Access to additional dawproject media files.
  *
- * @author J&uuml;rgen Mo&szlig;graber
+ * @author Jürgen Moßgraber
  */
 public class DawProjectMediaFiles implements IMediaFiles
 {

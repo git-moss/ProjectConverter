@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2022
+// (c) 2021-2023
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter;
@@ -7,7 +7,7 @@ package de.mossgrabers.projectconverter;
 /**
  * Interface to notify the user about notification messages.
  *
- * @author J&uuml;rgen Mo&szlig;graber
+ * @author Jürgen Moßgraber
  */
 public interface INotifier
 {

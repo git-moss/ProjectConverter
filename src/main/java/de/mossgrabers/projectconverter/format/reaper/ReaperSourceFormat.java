@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2022
+// (c) 2021-2023
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.format.reaper;
@@ -51,7 +51,7 @@ import com.bitwig.dawproject.timeline.Point;
 import com.bitwig.dawproject.timeline.Points;
 import com.bitwig.dawproject.timeline.RealPoint;
 import com.bitwig.dawproject.timeline.TimeSignaturePoint;
-import com.bitwig.dawproject.timeline.Timebase;
+import com.bitwig.dawproject.timeline.TimeUnit;
 
 import javafx.stage.FileChooser.ExtensionFilter;
 
@@ -86,7 +86,7 @@ import java.util.regex.Pattern;
  * Converts a Reaper project file (the already loaded chunks to be more specific) into a dawproject
  * structure. Needs to be state-less.
  *
- * @author J&uuml;rgen Mo&szlig;graber
+ * @author Jürgen Moßgraber
  */
 public class ReaperSourceFormat extends AbstractCoreTask implements ISourceFormat
 {
@@ -296,8 +296,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         arrangement.lanes = new Lanes ();
 
         final Optional<Node> timelockModeNode = rootChunk.getChildNode (ReaperTags.PROJECT_TIME_LOCKMODE);
-        arrangement.lanes.timebase = getIntParam (timelockModeNode, 1) == 0 ? Timebase.seconds : Timebase.beats;
-        beatsAndTime.sourceIsBeats = arrangement.lanes.timebase == Timebase.beats;
+        arrangement.lanes.timeUnit = getIntParam (timelockModeNode, 1) == 0 ? TimeUnit.seconds : TimeUnit.beats;
+        beatsAndTime.sourceIsBeats = arrangement.lanes.timeUnit == TimeUnit.beats;
 
         final Optional<Node> timelockEnvelopeModeNode = rootChunk.getChildNode (ReaperTags.PROJECT_TIME_ENV_LOCKMODE);
         beatsAndTime.sourceIsEnvelopeBeats = getIntParam (timelockEnvelopeModeNode, 1) == 1;
@@ -645,19 +645,23 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             lanes.lanes.add (envelope);
 
             if (interpolate)
-            {
                 envelope.unit = Unit.linear;
-                envelope.interpolation = Interpolation.linear;
-            }
-            else
-                envelope.interpolation = Interpolation.hold;
 
             envelope.target.parameter = parameter;
 
             final double beatsPerSecond = dawProject.getBeatsPerSecond ();
             for (final Node pointNode: envelopeChunk.getChildNodes (ReaperTags.ENVELOPE_POINT))
             {
-                final Point point = interpolate ? new RealPoint () : new BoolPoint ();
+                final Point point;
+                if (interpolate)
+                {
+                    final RealPoint realPoint = new RealPoint ();
+                    // TODO Are there different interpolations available in Reaper?
+                    realPoint.interpolation = Interpolation.linear;
+                    point = realPoint;
+                }
+                else
+                    point = new BoolPoint ();
                 final double timeValue = getDoubleParam (pointNode, 0, 0);
                 point.time = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, timeValue, true));
 
@@ -681,11 +685,9 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             final Points tempoEnvelope = new Points ();
             masterTrackLanes.lanes.add (tempoEnvelope);
             tempoEnvelope.unit = Unit.bpm;
-            tempoEnvelope.interpolation = Interpolation.linear;
             tempoEnvelope.target.parameter = project.transport.tempo;
 
             final Points signatureEnvelope = new Points ();
-            signatureEnvelope.interpolation = Interpolation.hold;
             signatureEnvelope.target.parameter = project.transport.timeSignature;
 
             final double beatsPerSecond = dawProject.getBeatsPerSecond ();
@@ -808,12 +810,13 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final Points envelope = new Points ();
         lanes.lanes.add (envelope);
         envelope.unit = Unit.linear;
-        envelope.interpolation = Interpolation.linear;
         envelope.target.parameter = param;
 
         for (final Node pointNode: paramEnvChunk.getChildNodes (ReaperTags.ENVELOPE_POINT))
         {
             final RealPoint point = new RealPoint ();
+            // TODO Is there interpolation info in Reaper?
+            point.interpolation = Interpolation.linear;
             point.time = Double.valueOf (getDoubleParam (pointNode, 0, 0));
             point.value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
             envelope.points.add (point);
@@ -1446,7 +1449,6 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     {
         final Points points = new Points ();
         points.unit = Unit.percent;
-        points.interpolation = Interpolation.linear;
         points.target.channel = channel;
         points.target.expression = type;
         if (type == ExpressionType.channelController)

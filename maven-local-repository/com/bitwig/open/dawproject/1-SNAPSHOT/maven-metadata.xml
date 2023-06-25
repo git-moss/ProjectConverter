@@ -2,30 +2,30 @@
 <metadata modelVersion="1.1.0">
   <groupId>com.bitwig.open</groupId>
   <artifactId>dawproject</artifactId>
-  <version>1-SNAPSHOT</version>
   <versioning>
+    <lastUpdated>20221231143836</lastUpdated>
     <snapshot>
-      <timestamp>20220509.181446</timestamp>
+      <timestamp>20221231.143836</timestamp>
       <buildNumber>1</buildNumber>
     </snapshot>
-    <lastUpdated>20220509181446</lastUpdated>
     <snapshotVersions>
       <snapshotVersion>
         <extension>jar</extension>
-        <value>1-20220509.181446-1</value>
-        <updated>20220509181446</updated>
+        <value>1-20221231.143836-1</value>
+        <updated>20221231143836</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
-        <value>1-20220509.181446-1</value>
-        <updated>20220509181446</updated>
+        <value>1-20221231.143836-1</value>
+        <updated>20221231143836</updated>
       </snapshotVersion>
       <snapshotVersion>
         <classifier>sources</classifier>
         <extension>jar</extension>
-        <value>1-20220509.181446-1</value>
-        <updated>20220509181446</updated>
+        <value>1-20221231.143836-1</value>
+        <updated>20221231143836</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>
+  <version>1-SNAPSHOT</version>
 </metadata>

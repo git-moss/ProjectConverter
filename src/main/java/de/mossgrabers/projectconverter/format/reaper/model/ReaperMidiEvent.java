@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2022
+// (c) 2021-2023
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.format.reaper.model;
@@ -13,7 +13,7 @@ import java.util.List;
  *
  * The start of a note: "E 0 90 24 2d". The end of a note: "E 480 80 24 00"
  *
- * @author J&uuml;rgen Mo&szlig;graber
+ * @author Jürgen Moßgraber
  */
 public class ReaperMidiEvent
 {
