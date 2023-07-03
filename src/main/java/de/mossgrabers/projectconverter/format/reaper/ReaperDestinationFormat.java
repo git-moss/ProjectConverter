@@ -10,6 +10,7 @@ import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.IDestinationFormat;
 import de.mossgrabers.projectconverter.core.IMediaFiles;
 import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
+import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
 import de.mossgrabers.projectconverter.format.reaper.model.Node;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
@@ -22,12 +23,16 @@ import com.bitwig.dawproject.Lane;
 import com.bitwig.dawproject.MetaData;
 import com.bitwig.dawproject.MixerRole;
 import com.bitwig.dawproject.Project;
+import com.bitwig.dawproject.RealParameter;
 import com.bitwig.dawproject.Send;
 import com.bitwig.dawproject.SendType;
 import com.bitwig.dawproject.Track;
 import com.bitwig.dawproject.Transport;
 import com.bitwig.dawproject.Unit;
+import com.bitwig.dawproject.device.BuiltinDevice;
+import com.bitwig.dawproject.device.ClapPlugin;
 import com.bitwig.dawproject.device.Device;
+import com.bitwig.dawproject.device.DeviceRole;
 import com.bitwig.dawproject.device.Plugin;
 import com.bitwig.dawproject.device.Vst2Plugin;
 import com.bitwig.dawproject.device.Vst3Plugin;
@@ -56,6 +61,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -76,7 +82,6 @@ import java.util.TreeMap;
  */
 public class ReaperDestinationFormat extends AbstractCoreTask implements IDestinationFormat
 {
-    private static final String                ONLY_LINEAR            = "Only linear volumes and panoramas are supported.";
     private static final int                   TICKS_PER_QUARTER_NOTE = 960;
 
     private static final Map<Class<?>, String> PLUGIN_TYPES           = new HashMap<> ();
@@ -84,6 +89,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     {
         PLUGIN_TYPES.put (Vst2Plugin.class, ReaperTags.PLUGIN_VST_2);
         PLUGIN_TYPES.put (Vst3Plugin.class, ReaperTags.PLUGIN_VST_3);
+        PLUGIN_TYPES.put (ClapPlugin.class, ReaperTags.PLUGIN_CLAP);
     }
 
 
@@ -183,7 +189,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      */
     private void saveProject (final Chunk rootChunk, final DawProjectContainer dawProject, final Parameters parameters, final File destinationPath) throws IOException
     {
-        if (!destinationPath.mkdir ())
+        if (!destinationPath.exists () && !destinationPath.mkdir ())
         {
             this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_OUTPUT_DIR");
             return;
@@ -206,7 +212,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             final File sampleOutputFile = new File (destinationPath, name);
             try (final InputStream in = mediaFiles.stream (audioFile))
             {
-                Files.copy (in, sampleOutputFile.toPath (), StandardCopyOption.REPLACE_EXISTING);
+                final Path path = sampleOutputFile.toPath ();
+                this.notifier.log ("IDS_NOTIFY_WRITING_AUDIO_FILE");
+                Files.copy (in, path, StandardCopyOption.REPLACE_EXISTING);
             }
         }
     }
@@ -336,11 +344,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         addNode (rootChunk, ReaperTags.MASTER_NUMBER_OF_CHANNELS, channel.audioChannels == null ? "2" : channel.audioChannels.toString ());
 
         if (channel.volume != null && channel.pan != null)
-        {
-            if (channel.volume.unit != Unit.linear || channel.pan.unit != Unit.linear)
-                throw new IOException (ONLY_LINEAR);
-            addNode (rootChunk, ReaperTags.MASTER_VOLUME_PAN, channel.volume.value.toString (), channel.pan.value.toString ());
-        }
+            addNode (rootChunk, ReaperTags.MASTER_VOLUME_PAN, this.getValue (channel.volume, Unit.linear), this.getValue (channel.pan, Unit.normalized));
 
         int state = channel.solo != null && channel.solo.booleanValue () ? 2 : 0;
         if (channel.mute != null && channel.mute.value.booleanValue ())
@@ -376,7 +380,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         {
             final Track track = trackInfo.track;
             if (track != null)
-                convertSends (track, parameters);
+                this.convertSends (track, parameters);
         }
     }
 
@@ -388,7 +392,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param parameters The parameters
      * @throws IOException Units must be linear
      */
-    private static void convertSends (final Track track, final Parameters parameters) throws IOException
+    private void convertSends (final Track track, final Parameters parameters) throws IOException
     {
         if (track.channel == null || track.channel.sends == null)
             return;
@@ -396,8 +400,6 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         {
             if (send.destination == null || send.volume == null)
                 continue;
-            if (send.volume.unit != Unit.linear)
-                throw new IOException (ONLY_LINEAR);
             final Track destinationTrack = parameters.channelMapping.get (send.destination);
             if (destinationTrack != null)
             {
@@ -406,7 +408,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 if (auxChunk != null && index != null)
                 {
                     final String mode = send.type == null || send.type == SendType.post ? "0" : "1";
-                    addNode (auxChunk, ReaperTags.TRACK_AUX_RECEIVE, index.toString (), mode, send.volume.value.toString (), "0");
+                    addNode (auxChunk, ReaperTags.TRACK_AUX_RECEIVE, index.toString (), mode, this.getValue (send.volume, Unit.linear), "0");
 
                     // TODO add panorama
                 }
@@ -433,32 +435,101 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
         for (final Device device: devices)
         {
-            if (device.state == null)
-                continue;
+            if (device.state != null)
+                this.convertDevice (device, fxChunk, mediaFiles);
+        }
+    }
 
-            // TODO Support CLAP plugins
 
-            if (!(device instanceof Vst2Plugin) && !(device instanceof Vst3Plugin))
-            {
-                // Note: AU plugins can be supported here but only necessary if there is another
-                // project source format besides Reaper which supports AU (Bitwig does not). Needs
-                // to be added to PLUGIN_TYPES as well.
-                this.notifier.logError ("IDS_NOTIFY_PLUGIN_TYPE_NOT_SUPPORTED", device.getClass ().getName ());
-                continue;
-            }
+    /**
+     * Assigns the data of one Device of a track to different Reaper settings.
+     *
+     * @param device The device to convert
+     * @param fxChunk The FX chunk where to add the device information
+     * @param mediaFiles Access to additional media files
+     * @throws IOException Could not create the VST chunks
+     */
+    private void convertDevice (final Device device, final Chunk fxChunk, final IMediaFiles mediaFiles) throws IOException
+    {
+        final boolean bypass = device.enabled != null && device.enabled.value != null && !device.enabled.value.booleanValue ();
+        final boolean offline = device.loaded != null && !device.loaded.booleanValue ();
+        addNode (fxChunk, ReaperTags.FXCHAIN_BYPASS, bypass ? "1" : "0", offline ? "1" : "0");
 
-            final boolean bypass = device.enabled != null && device.enabled.value != null && !device.enabled.value.booleanValue ();
-            final boolean offline = device.loaded != null && !device.loaded.booleanValue ();
-            addNode (fxChunk, ReaperTags.FXCHAIN_BYPASS, bypass ? "1" : "0", offline ? "1" : "0");
+        if (device instanceof Vst2Plugin || device instanceof Vst3Plugin)
+        {
+            convertVstDevice (device, fxChunk, mediaFiles);
+        }
+        else if (device instanceof final ClapPlugin clapPlugin)
+        {
+            convertClapDevice (clapPlugin, fxChunk, mediaFiles);
+        }
+        else if (device instanceof BuiltinDevice)
+        {
+            // TODO Support built-in devices
+        }
+        else
+        {
+            // Note: AU plugins can be supported here but only necessary if there is another
+            // project source format besides Reaper which supports AU (Bitwig does not).
+            this.notifier.logError ("IDS_NOTIFY_PLUGIN_TYPE_NOT_SUPPORTED", device.getClass ().getName ());
+        }
 
-            final Chunk vstChunk = addChunk (fxChunk, ReaperTags.CHUNK_VST, createDeviceName (device), "\"\"", "0", "\"\"", createDeviceID (device));
+        // TODO convert VST parameter envelopes -> needs parameter ID fix from Bitwig export
+    }
 
-            try (final InputStream in = mediaFiles.stream (device.state.path))
-            {
-                handleVstDevice (vstChunk, device, in);
-            }
 
-            // TODO convert VST parameter envelopes -> needs parameter ID fix from Bitwig export
+    /**
+     * Convert a VST device to Reaper.
+     *
+     * @param device The device to convert
+     * @param fxChunk The FX chunk where to add the device information
+     * @param mediaFiles Access to additional media files
+     * @throws IOException Could not create the VST chunks
+     */
+    private static void convertVstDevice (final Device device, final Chunk fxChunk, final IMediaFiles mediaFiles) throws IOException
+    {
+        // Create the Reaper device ID for the VST chunk
+        final StringBuilder id = new StringBuilder ();
+        if (device instanceof Vst2Plugin)
+        {
+            final StringBuilder fakeVst3ID = new StringBuilder ("VST");
+            // VST2 ID transformed to ASCII text
+            final int vstID = Integer.parseInt (device.deviceID);
+            fakeVst3ID.append (intToText (vstID));
+            // First 9 lower case characters of the device name
+            String fakeID = fakeVst3ID.append (device.name.toLowerCase (Locale.US)).toString ();
+            fakeID = fakeID.substring (0, Math.min (16, fakeID.length ()));
+
+            id.append (device.deviceID).append ("<");
+            for (int i = 0; i < 16; i++)
+                id.append (i < fakeID.length () ? Integer.toHexString (fakeID.charAt (i)) : "00");
+            id.append (">");
+        }
+        else if (device instanceof Vst3Plugin)
+            id.append ("{").append (device.deviceID).append ("}");
+
+        final Chunk vstChunk = addChunk (fxChunk, ReaperTags.CHUNK_VST, createDeviceName (device), "\"\"", "0", "\"\"", id.toString ());
+        try (final InputStream in = mediaFiles.stream (device.state.path))
+        {
+            new VstChunkHandler (device instanceof Vst2Plugin, null).fileToChunk (in, vstChunk);
+        }
+    }
+
+
+    /**
+     * Convert a CLAP device to Reaper.
+     *
+     * @param clapPlugin The CLAP plugin to convert
+     * @param fxChunk The FX chunk where to add the device information
+     * @param mediaFiles Access to additional media files
+     * @throws IOException Could not create the VST chunks
+     */
+    private static void convertClapDevice (final ClapPlugin clapPlugin, final Chunk fxChunk, final IMediaFiles mediaFiles) throws IOException
+    {
+        final Chunk clapChunk = addChunk (fxChunk, ReaperTags.CHUNK_CLAP, createDeviceName (clapPlugin), clapPlugin.deviceID, "\"\"");
+        try (final InputStream in = mediaFiles.stream (clapPlugin.state.path))
+        {
+            new ClapChunkHandler ().fileToChunk (in, clapChunk);
         }
     }
 
@@ -494,12 +565,8 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             addNode (trackChunk, ReaperTags.TRACK_NUMBER_OF_CHANNELS, channel.audioChannels.toString ());
 
         // Volume & Panorama
-        if (channel.volume != null)
-        {
-            if (channel.volume.unit != Unit.linear || channel.pan != null && channel.pan.unit != Unit.linear)
-                throw new IOException (ONLY_LINEAR);
-            addNode (trackChunk, ReaperTags.TRACK_VOLUME_PAN, channel.volume.value.toString (), channel.pan == null ? "0" : channel.pan.value.toString ());
-        }
+        if (channel.volume != null && channel.pan != null)
+            addNode (trackChunk, ReaperTags.TRACK_VOLUME_PAN, this.getValue (channel.volume, Unit.linear), channel.pan == null ? "0" : this.getValue (channel.pan, Unit.normalized));
 
         // Mute & Solo
         int state = channel.solo != null && channel.solo.booleanValue () ? 2 : 0;
@@ -983,36 +1050,6 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
 
     /**
-     * Creates the Reaper device ID for the VST chunk.
-     *
-     * @param device The device for which to create an ID
-     * @return The ID
-     */
-    private static String createDeviceID (final Device device)
-    {
-        final StringBuilder id = new StringBuilder ();
-        if (device instanceof Vst2Plugin)
-        {
-            final StringBuilder fakeVst3ID = new StringBuilder ("VST");
-            // VST2 ID transformed to ASCII text
-            final int vstID = Integer.parseInt (device.deviceID);
-            fakeVst3ID.append (intToText (vstID));
-            // First 9 lower case characters of the device name
-            String fakeID = fakeVst3ID.append (device.name.toLowerCase (Locale.US)).toString ();
-            fakeID = fakeID.substring (0, Math.min (16, fakeID.length ()));
-
-            id.append (device.deviceID).append ("<");
-            for (int i = 0; i < 16; i++)
-                id.append (i < fakeID.length () ? Integer.toHexString (fakeID.charAt (i)) : "00");
-            id.append (">");
-        }
-        else if (device instanceof Vst3Plugin)
-            id.append ("{").append (device.deviceID).append ("}");
-        return id.toString ();
-    }
-
-
-    /**
      * Creates the Reaper device name for the VST chunk.
      *
      * @param device The device for which to create a name
@@ -1023,28 +1060,16 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final StringBuilder name = new StringBuilder ();
 
         if (device instanceof final Plugin plugin)
+        {
             name.append (PLUGIN_TYPES.get (plugin.getClass ()));
+            if (plugin.deviceRole == DeviceRole.instrument)
+                name.append ("i");
+        }
 
         name.append (": ").append (device.deviceName);
         if (device.deviceVendor != null)
             name.append (" (").append (device.deviceVendor).append (")");
         return name.toString ();
-    }
-
-
-    /**
-     * Creates a device chunk. Currently supports VST2 and VST3.
-     *
-     * @param deviceChunk The device chunk
-     * @param device The VST device
-     * @param in The input stream from which to read the devices' state
-     * @throws IOException Could not read the device state
-     */
-    private static void handleVstDevice (final Chunk deviceChunk, final Device device, final InputStream in) throws IOException
-    {
-        final VstChunkHandler vstChunkHandler = new VstChunkHandler (device instanceof Vst2Plugin, null);
-        vstChunkHandler.readPreset (in);
-        vstChunkHandler.create (deviceChunk);
     }
 
 
@@ -1200,6 +1225,14 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 tracks.add (track);
         }
         return tracks;
+    }
+
+
+    private String getValue (final RealParameter parameter, final Unit supportedUnit)
+    {
+        if (parameter.unit != supportedUnit)
+            this.notifier.logError ("IDS_NOTIFY_UNIT_NOT_SUPPORTED", parameter.name, parameter.unit.toString ());
+        return parameter.value.toString ();
     }
 
 

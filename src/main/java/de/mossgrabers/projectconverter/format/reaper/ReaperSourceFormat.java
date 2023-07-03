@@ -9,6 +9,8 @@ import de.mossgrabers.projectconverter.core.AbstractCoreTask;
 import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.ISourceFormat;
 import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
+import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
+import de.mossgrabers.projectconverter.format.reaper.model.DeviceChunkHandler;
 import de.mossgrabers.projectconverter.format.reaper.model.Node;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
@@ -34,7 +36,9 @@ import com.bitwig.dawproject.TimeSignatureParameter;
 import com.bitwig.dawproject.Track;
 import com.bitwig.dawproject.Transport;
 import com.bitwig.dawproject.Unit;
+import com.bitwig.dawproject.device.ClapPlugin;
 import com.bitwig.dawproject.device.Device;
+import com.bitwig.dawproject.device.DeviceRole;
 import com.bitwig.dawproject.device.Vst2Plugin;
 import com.bitwig.dawproject.device.Vst3Plugin;
 import com.bitwig.dawproject.timeline.Audio;
@@ -90,10 +94,10 @@ import java.util.regex.Pattern;
  */
 public class ReaperSourceFormat extends AbstractCoreTask implements ISourceFormat
 {
-    private static final Pattern         PATTERN_VST_DESCRIPTION = Pattern.compile ("(VST|VSTi|VST3|VST3i)?:\\s(.*)\\s\\((.*)\\)");
-    private static final Pattern         PATTERN_VST2_ID         = Pattern.compile ("(.*)<.*");
-    private static final Pattern         PATTERN_VST3_ID         = Pattern.compile (".*\\{(.*)\\}");
-    private static final ExtensionFilter EXTENSION_FILTER        = new ExtensionFilter ("Reaper Project", "*.rpp", "*.rpp-bak");
+    private static final Pattern         PATTERN_DEVICE_DESCRIPTION = Pattern.compile ("(VST|VSTi|VST3|VST3i|CLAP|CLAPi)?:\\s(.*)\\s\\((.*)\\)");
+    private static final Pattern         PATTERN_VST2_ID            = Pattern.compile ("(.*)<.*");
+    private static final Pattern         PATTERN_VST3_ID            = Pattern.compile (".*\\{(.*)\\}");
+    private static final ExtensionFilter EXTENSION_FILTER           = new ExtensionFilter ("Reaper Project", "*.rpp", "*.rpp-bak");
 
 
     private enum MidiBytes
@@ -146,6 +150,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         convertArrangement (project, rootChunk, beatsAndTime);
         beatsAndTime.destinationIsBeats = true;
+        project.arrangement.lanes.timeUnit = beatsAndTime.destinationIsBeats ? TimeUnit.beats : TimeUnit.seconds;
 
         final FolderStructure structure = new FolderStructure ();
         structure.folderTracks = new ArrayList<> ();
@@ -296,8 +301,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         arrangement.lanes = new Lanes ();
 
         final Optional<Node> timelockModeNode = rootChunk.getChildNode (ReaperTags.PROJECT_TIME_LOCKMODE);
-        arrangement.lanes.timeUnit = getIntParam (timelockModeNode, 1) == 0 ? TimeUnit.seconds : TimeUnit.beats;
-        beatsAndTime.sourceIsBeats = arrangement.lanes.timeUnit == TimeUnit.beats;
+        beatsAndTime.sourceIsBeats = getIntParam (timelockModeNode, 1) == 1;
 
         final Optional<Node> timelockEnvelopeModeNode = rootChunk.getChildNode (ReaperTags.PROJECT_TIME_ENV_LOCKMODE);
         beatsAndTime.sourceIsEnvelopeBeats = getIntParam (timelockEnvelopeModeNode, 1) == 1;
@@ -319,7 +323,6 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     private static void convertMarkers (final DawProjectContainer dawProject, final Chunk rootChunk, final BeatsAndTime beatsAndTime)
     {
         final Markers cueMarkers = new Markers ();
-        dawProject.getProject ().arrangement.lanes.lanes.add (cueMarkers);
 
         final double beatsPerSecond = dawProject.getBeatsPerSecond ();
         for (final Node node: rootChunk.getChildNodes ())
@@ -341,6 +344,9 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 marker.color = toHexColor (c);
             cueMarkers.markers.add (marker);
         }
+
+        if (!cueMarkers.markers.isEmpty ())
+            dawProject.getProject ().arrangement.lanes.lanes.add (cueMarkers);
     }
 
 
@@ -386,12 +392,16 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final Project project = dawProject.getProject ();
 
         final Track masterTrack = new Track ();
+        folderStructure.folderTracks.add (masterTrack);
+
+        masterTrack.name = "Master";
+        masterTrack.contentType = new ContentType []
+        {
+            ContentType.audio
+        };
+
         masterTrack.channel = new Channel ();
         final Channel channel = masterTrack.channel;
-
-        folderStructure.folderTracks.add (masterTrack);
-        masterTrack.name = "Master";
-
         channel.role = MixerRole.master;
 
         final int numberOfChannels = getIntParam (rootChunk.getChildNode (ReaperTags.MASTER_NUMBER_OF_CHANNELS), -1);
@@ -402,7 +412,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         if (volPan.length >= 1)
         {
             channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, Math.min (1, valueToDB (volPan[0], 0)));
-            channel.pan = createRealParameter (Unit.linear, -1.0, 1.0, volPan[1]);
+            channel.pan = createRealParameter (Unit.normalized, 0.0, 1.0, (volPan[1] + 1.0) / 2.0);
         }
 
         // Mute & Solo
@@ -543,7 +553,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         if (volPan.length >= 1)
         {
             channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDB (volPan[0], 0));
-            channel.pan = createRealParameter (Unit.linear, -1.0, 1.0, volPan[1]);
+            channel.pan = createRealParameter (Unit.normalized, 0.0, 1.0, (volPan[1] + 1.0) / 2.0);
         }
 
         // Mute & Solo
@@ -764,9 +774,9 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                     bypass = params.length > 0 && params[0] > 0;
                     offline = params.length > 1 && params[1] > 0;
                 }
-                else if (ReaperTags.CHUNK_VST.equals (nodeName) && node instanceof final Chunk vstChunk)
+                else if ((ReaperTags.CHUNK_CLAP.equals (nodeName) || ReaperTags.CHUNK_VST.equals (nodeName)) && node instanceof final Chunk chunk)
                 {
-                    device = this.handleFX (dawProject, vstChunk, bypass, offline);
+                    device = this.convertDevice (dawProject, chunk, bypass, offline);
                     if (device != null)
                         devices.add (device);
                 }
@@ -825,44 +835,67 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
 
     /**
-     * Analyze one FX device.
+     * Analyze one FX device chunk.
      *
      * @param dawProject The dawproject container
-     * @param vstChunk The VST chunk
+     * @param chunk The device chunk
      * @param offline True if the FX device is offline
      * @param bypass True if the FX device is bypassed
      * @return The created device
      * @throws ParseException Error during parsing
      */
-    private Device handleFX (final DawProjectContainer dawProject, final Chunk vstChunk, final boolean bypass, final boolean offline) throws ParseException
+    private Device convertDevice (final DawProjectContainer dawProject, final Chunk chunk, final boolean bypass, final boolean offline) throws ParseException
     {
-        final List<String> parameters = vstChunk.getParameters ();
-        if (parameters.size () < 5)
+        final List<String> parameters = chunk.getParameters ();
+        if (parameters.size () < 3)
             return null;
 
-        final Matcher descMatcher = PATTERN_VST_DESCRIPTION.matcher (parameters.get (0));
+        final String deviceDesc = parameters.get (0);
+        final Matcher descMatcher = PATTERN_DEVICE_DESCRIPTION.matcher (deviceDesc);
         if (!descMatcher.matches ())
+        {
+            this.notifier.logError ("IDS_NOTIFY_COULD_NOT_MATCH_DEVICE", deviceDesc);
             return null;
+        }
 
         final Device device;
         final String fileEnding;
-        final Pattern idPattern;
-        boolean isVST2;
+        boolean isVST2 = false;
         final String pluginType = descMatcher.group (1);
+        if (pluginType == null)
+        {
+            this.notifier.logError ("IDS_NOTIFY_NO_PLUGIN_TYPE");
+            return null;
+        }
+
+        final String deviceID;
         switch (pluginType)
         {
             case ReaperTags.PLUGIN_VST_2, ReaperTags.PLUGIN_VST_2_INSTRUMENT:
                 device = new Vst2Plugin ();
                 fileEnding = ".fxp";
-                idPattern = PATTERN_VST2_ID;
                 isVST2 = true;
+
+                final Matcher idMatcher2 = PATTERN_VST2_ID.matcher (parameters.get (4));
+                if (!idMatcher2.matches ())
+                    return null;
+                deviceID = idMatcher2.group (1);
                 break;
 
             case ReaperTags.PLUGIN_VST_3, ReaperTags.PLUGIN_VST_3_INSTRUMENT:
                 device = new Vst3Plugin ();
                 fileEnding = ".vstpreset";
-                idPattern = PATTERN_VST3_ID;
-                isVST2 = false;
+
+                final Matcher idMatcher3 = PATTERN_VST3_ID.matcher (parameters.get (4));
+                if (!idMatcher3.matches ())
+                    return null;
+                deviceID = idMatcher3.group (1);
+                break;
+
+            case ReaperTags.PLUGIN_CLAP, ReaperTags.PLUGIN_CLAP_INSTRUMENT:
+                device = new ClapPlugin ();
+                fileEnding = ".clap-preset";
+                deviceID = parameters.get (1);
                 break;
 
             default:
@@ -871,15 +904,20 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 return null;
         }
 
-        final Matcher idMatcher = idPattern.matcher (parameters.get (4));
-        if (!idMatcher.matches ())
-            return null;
-
         device.name = descMatcher.group (2);
         // device.pluginVersion -> information not available
+
+        if (ReaperTags.isInstrumentPlugin (pluginType))
+            device.deviceRole = DeviceRole.instrument;
+        else
+        {
+            // Other type info not available, therefore always assume an audio FX
+            device.deviceRole = DeviceRole.audioFX;
+        }
+
         device.deviceName = device.name;
         device.deviceVendor = descMatcher.group (3);
-        device.deviceID = idMatcher.group (1);
+        device.deviceID = deviceID;
         device.enabled = new BoolParameter ();
         device.enabled.value = Boolean.valueOf (!bypass);
         device.enabled.name = "On/Off";
@@ -897,9 +935,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
             try (final FileOutputStream out = new FileOutputStream (tempFile))
             {
-                final VstChunkHandler vstChunkHandler = new VstChunkHandler (isVST2, device.deviceID);
-                vstChunkHandler.parse (vstChunk);
-                vstChunkHandler.writePreset (out);
+                final DeviceChunkHandler handler = device instanceof ClapPlugin ? new ClapChunkHandler () : new VstChunkHandler (isVST2, device.deviceID);
+                handler.chunkToFile (chunk, out);
                 dawProject.getMediaFiles ().add (device.state.path, tempFile);
             }
         }
@@ -971,6 +1008,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         clip.name = getParam (itemChunk.getChildNode (ReaperTags.ITEM_NAME), null);
         clip.time = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0), false);
+        clip.contentTimeUnit = beatsAndTime.destinationIsBeats ? TimeUnit.beats : TimeUnit.seconds;
         clip.duration = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false);
 
         // TODO clip.comment -> <ITEM <NOTES -> also in destination format
@@ -996,23 +1034,38 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             if (parameters.isEmpty ())
                 return null;
 
+            final Clip internalClip = new Clip ();
+            final double offset = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_SAMPLE_OFFSET), 0), false);
+            internalClip.time = 0;
+            internalClip.playStart = Double.valueOf (offset);
+            internalClip.playStop = Double.valueOf (clip.duration - offset);
+            internalClip.contentTimeUnit = clip.contentTimeUnit;
+            internalClip.duration = clip.duration;
+
             final String clipType = parameters.get (0);
             switch (clipType)
             {
                 case "MIDI":
-                    convertMIDI (dawProject, clip, sourceChunk, beatsAndTime);
+                    final Lanes lanes = convertMIDI (dawProject, sourceChunk, beatsAndTime);
+                    if (lanes != null)
+                        internalClip.content = lanes;
                     break;
 
                 case "WAVE":
-                    convertAudio (dawProject, clip, sourceChunk, sourcePath);
+                    final Audio audio = convertAudio (dawProject, sourceChunk, sourcePath);
+                    if (audio != null)
+                        internalClip.content = audio;
                     break;
 
                 default:
                     // Not supported
                     this.notifier.log ("IDS_NOTIFY_CLIPTYPE_NOT_SUPPORTED", clipType);
-                    break;
+                    return null;
             }
 
+            final Clips clips = new Clips ();
+            clip.content = clips;
+            clips.clips.add (internalClip);
             return clip;
         }
 
@@ -1024,20 +1077,19 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * Fill a MIDI clip.
      *
      * @param dawProject The dawproject container
-     * @param clip The clip to fill
      * @param sourceChunk The source chunk which contains the clip data
      * @param beatsAndTime The beats and/or time conversion information
+     * @return The created MIDI lanes
      * @throws ParseException Could not parse the notes
      */
-    private static void convertMIDI (final DawProjectContainer dawProject, final Clip clip, final Chunk sourceChunk, final BeatsAndTime beatsAndTime) throws ParseException
+    private static Lanes convertMIDI (final DawProjectContainer dawProject, final Chunk sourceChunk, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final int ticksPerQuarterNote = readTicksPerQuarterNote (sourceChunk);
         if (ticksPerQuarterNote == -1)
-            return;
+            return null;
 
         final Notes notes = new Notes ();
         final Lanes contentLanes = new Lanes ();
-        clip.content = contentLanes;
         contentLanes.lanes.add (notes);
 
         final Map<ExpressionType, Map<Integer, Map<Integer, Points>>> envelopes = new EnumMap<> (ExpressionType.class);
@@ -1126,6 +1178,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             for (final Map<Integer, Points> envelope: expEnvelopes.values ())
                 for (final Points points: envelope.values ())
                     contentLanes.lanes.add (points);
+
+        return contentLanes;
     }
 
 
@@ -1133,21 +1187,21 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * Fill an audio clip.
      *
      * @param dawProject The dawproject container
-     * @param clip The clip to fill
      * @param sourceChunk The audio source chunk
      * @param sourcePath The path of the source project file
+     * @return The created Audio clip object
      * @throws ParseException Could not retrieve audio file format
      */
-    private static void convertAudio (final DawProjectContainer dawProject, final Clip clip, final Chunk sourceChunk, final File sourcePath) throws ParseException
+    private static Audio convertAudio (final DawProjectContainer dawProject, final Chunk sourceChunk, final File sourcePath) throws ParseException
     {
         final Optional<Node> waveFileOptional = sourceChunk.getChildNode (ReaperTags.SOURCE_FILE);
         if (waveFileOptional.isEmpty ())
-            return;
+            return null;
 
         final Node waveFileNode = waveFileOptional.get ();
         final List<String> waveFileNodeParameters = waveFileNode.getParameters ();
         if (waveFileNodeParameters.isEmpty ())
-            return;
+            return null;
 
         final String filename = waveFileNodeParameters.get (0).replaceAll ("^\"|\"$", "");
         final Audio audio = new Audio ();
@@ -1170,15 +1224,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         }
 
         ((ReaperMediaFiles) dawProject.getMediaFiles ()).add (audio.file.path, sourceFile);
-
-        // Necessary to wrap in another Clips/Clip pair to load it successfully in Bitwig
-        final Clips clips = new Clips ();
-        clip.content = clips;
-        final Clip internalClip = new Clip ();
-        internalClip.time = 0;
-        internalClip.duration = clip.duration;
-        clips.clips.add (internalClip);
-        internalClip.content = audio;
+        return audio;
     }
 
 
@@ -1579,12 +1625,12 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * Convert the time value to beats.
      *
      * @param beatsPerSecond Beats per second
-     * @param value The value in time
+     * @param value The value in time (seconds)
      * @return The value in beats
      */
     private static double toBeats (final double beatsPerSecond, final double value)
     {
-        return beatsPerSecond * value;
+        return value * beatsPerSecond;
     }
 
 

@@ -22,6 +22,8 @@ import de.mossgrabers.tools.ui.panel.BasePanel;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
 import de.mossgrabers.tools.ui.panel.ButtonPanel;
 
+import com.bitwig.dawproject.DawProject;
+
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
@@ -289,6 +291,15 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
                 {
                     this.logError ("IDS_NOTIFY_COULD_NOT_READ", ex);
                     return;
+                }
+
+                try
+                {
+                    DawProject.validate (dawProject.getProject ());
+                }
+                catch (final IOException ex)
+                {
+                    this.logError ("IDS_NOTIFY_COULD_NOT_VALIDATE_PROJECT", ex);
                 }
 
                 // Check for overwrite

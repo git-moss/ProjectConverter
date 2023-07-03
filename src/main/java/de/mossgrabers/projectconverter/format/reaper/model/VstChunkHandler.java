@@ -7,6 +7,7 @@ package de.mossgrabers.projectconverter.format.reaper.model;
 import de.mossgrabers.projectconverter.utils.StreamHelper;
 import de.mossgrabers.projectconverter.vst.Vst3Preset;
 import de.mossgrabers.projectconverter.vst.Vst3Preset.Vst3ChunkInfo;
+import de.mossgrabers.tools.ui.Functions;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -15,9 +16,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
-import java.util.Base64.Decoder;
-import java.util.Base64.Encoder;
 import java.util.List;
 
 
@@ -26,7 +24,7 @@ import java.util.List;
  *
  * @author Jürgen Moßgraber
  */
-public class VstChunkHandler
+public class VstChunkHandler extends DeviceChunkHandler
 {
     private static final int     CHUNK_OPAQUE       = 0xFEED5EEE;
     private static final int     CHUNK_REGULAR      = 0xFEED5EEF;
@@ -41,9 +39,6 @@ public class VstChunkHandler
     private static final byte [] CONNECTIONS        = { 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0 };
     // @formatter:on
 
-    private final Decoder        decoder            = Base64.getDecoder ();
-    private final Encoder        encoder            = Base64.getEncoder ();
-
     private boolean              isVST2;
     private String               deviceID;
 
@@ -52,12 +47,6 @@ public class VstChunkHandler
 
     /** The data type (at least I guess so). */
     private int                  dataType;
-
-    /** The VST data. */
-    private byte []              vstData;
-
-    /** The size of the data. */
-    private int                  dataSize;
 
     /** Null terminated preset name. */
     private String               presetName;
@@ -77,15 +66,11 @@ public class VstChunkHandler
     }
 
 
-    /**
-     * Parses the content of a VST chunk.
-     *
-     * @param vstChunk The VST chunk to parse
-     * @throws IOException If an error occurs
-     */
-    public void parse (final Chunk vstChunk) throws IOException
+    /** {@inheritDoc} */
+    @Override
+    public void chunkToFile (final Chunk chunk, final OutputStream out) throws IOException
     {
-        final List<Node> childNodes = new ArrayList<> (vstChunk.getChildNodes ());
+        final List<Node> childNodes = new ArrayList<> (chunk.getChildNodes ());
         final String lastLine = childNodes.remove (childNodes.size () - 1).getName ();
         this.readLastLine (this.decoder.decode (lastLine.trim ()));
 
@@ -96,12 +81,12 @@ public class VstChunkHandler
 
         this.vstID = StreamHelper.readIntLittleEndian (in);
 
-        /** 0xFEED5EEE or 0xFEED5EEF for the ones with magic numbers set. */
+        // 0xFEED5EEE or 0xFEED5EEF for the ones with magic numbers set
         this.dataType = StreamHelper.readIntLittleEndian (in);
         if (this.dataType != CHUNK_OPAQUE && this.dataType != CHUNK_REGULAR)
             throw new IOException (String.format ("Unsupported data format: %X", Integer.valueOf (this.dataType)));
 
-        /** Number of input channels for routing. */
+        // Number of input channels for routing
         final int numInputs = StreamHelper.readIntLittleEndian (in);
 
         // A bit mask array of 8 bytes each, for the input routings
@@ -110,14 +95,14 @@ public class VstChunkHandler
         // Total size is 8*NumInputs bytes
         in.skipNBytes (8L * numInputs);
 
-        /** Number of output channels for routing. */
+        // Number of output channels for routing
         final int numOutputs = StreamHelper.readIntLittleEndian (in);
 
         // Again bit mask array 8 bytes each for outputs this time...
         in.skipNBytes (8L * numOutputs);
 
         // Size of the VST Data and the 2 magic numbers
-        this.dataSize = StreamHelper.readIntLittleEndian (in);
+        int dataSize = StreamHelper.readIntLittleEndian (in);
 
         // Seems to indicate the magic numbers (0 = magic / regular, 1 = no magic / opaque)
         StreamHelper.readIntLittleEndian (in);
@@ -129,23 +114,26 @@ public class VstChunkHandler
         final int magicNumber1 = StreamHelper.readIntLittleEndian (in);
         final int magicNumber2 = StreamHelper.readIntLittleEndian (in);
         if (magicNumber1 == MAGIC1 && magicNumber2 == MAGIC2)
-            this.dataSize -= 8;
+            dataSize -= 8;
         else
             in.reset ();
 
         // Read the VST data
-        this.vstData = in.readNBytes (this.dataSize);
+        final byte [] data = in.readNBytes (dataSize);
+
+        if (this.isVST2)
+            this.writeVST2Preset (out, data);
+        else
+            this.writeVST3Preset (out, data);
     }
 
 
-    /**
-     * Creates a VST chunk.
-     *
-     * @param vstChunk The VST chunk to create
-     * @throws IOException If an error occurs
-     */
-    public void create (final Chunk vstChunk) throws IOException
+    /** {@inheritDoc} */
+    @Override
+    public void fileToChunk (final InputStream in, final Chunk chunk) throws IOException
     {
+        final byte [] data = this.isVST2 ? this.readVST2Preset (in) : this.readVST3Preset (in);
+
         final ByteArrayOutputStream out = new ByteArrayOutputStream ();
 
         StreamHelper.writeIntLittleEndian (out, this.vstID);
@@ -166,7 +154,7 @@ public class VstChunkHandler
         out.write (CONNECTIONS);
 
         // Size of the VST Data and the 2 magic numbers
-        StreamHelper.writeIntLittleEndian (out, this.dataSize);
+        StreamHelper.writeIntLittleEndian (out, data.length);
 
         // Seems to indicate the magic numbers (0 = magic, 1 = no magic)
         final boolean isOpaque = this.dataType == CHUNK_OPAQUE;
@@ -174,7 +162,7 @@ public class VstChunkHandler
         // Found: 100000, 100002, 10000C, 10FFFF
         StreamHelper.writeIntLittleEndian (out, 0x100000);
 
-        createLines (vstChunk, this.encoder.encode (out.toByteArray ()));
+        createLines (chunk, this.encoder.encode (out.toByteArray ()));
 
         out.reset ();
 
@@ -186,9 +174,9 @@ public class VstChunkHandler
         }
 
         // Write the VST data
-        out.write (this.vstData);
+        out.write (data);
 
-        createLines (vstChunk, this.encoder.encode (out.toByteArray ()));
+        createLines (chunk, this.encoder.encode (out.toByteArray ()));
 
         // Last line
         out.reset ();
@@ -201,7 +189,7 @@ public class VstChunkHandler
         out.write (0);
         out.write (0);
         out.write (0);
-        createLines (vstChunk, this.encoder.encode (out.toByteArray ()));
+        createLines (chunk, this.encoder.encode (out.toByteArray ()));
     }
 
 
@@ -230,33 +218,19 @@ public class VstChunkHandler
 
 
     /**
-     * Write a VST 2 or 3 preset file.
-     *
-     * @param out The output stream to write to
-     * @throws IOException If an error occurs
-     */
-    public void writePreset (final OutputStream out) throws IOException
-    {
-        if (this.isVST2)
-            this.writeVST2Preset (out);
-        else
-            this.writeVST3Preset (out);
-    }
-
-
-    /**
      * Write a VST 2 preset file.
      *
      * @param out The output stream to write to
+     * @param data The data to store
      * @throws IOException If an error occurs
      */
-    private void writeVST2Preset (final OutputStream out) throws IOException
+    private void writeVST2Preset (final OutputStream out, final byte [] data) throws IOException
     {
         // VST Chunk ID
         out.write (VST2_CHUNK);
 
         // Size of this chunk
-        StreamHelper.writeIntBigEndian (out, 48 + this.dataSize);
+        StreamHelper.writeIntBigEndian (out, 48 + data.length);
 
         // 'FPCh' (opaque chunk)
         final boolean isOpaque = this.dataType == CHUNK_OPAQUE;
@@ -275,7 +249,7 @@ public class VstChunkHandler
         StreamHelper.writeIntBigEndian (out, 1);
 
         // Number of parameters
-        StreamHelper.writeIntBigEndian (out, isOpaque ? 0 : this.dataSize / 4);
+        StreamHelper.writeIntBigEndian (out, isOpaque ? 0 : data.length / 4);
 
         // Program name (null-terminated ASCII string)
         final String name = this.getPresetName ();
@@ -286,24 +260,9 @@ public class VstChunkHandler
 
         // Write size
         if (isOpaque)
-            StreamHelper.writeIntBigEndian (out, this.dataSize);
+            StreamHelper.writeIntBigEndian (out, data.length);
 
-        out.write (this.vstData);
-    }
-
-
-    /**
-     * Read a VST 2 or 3 preset file.
-     *
-     * @param in The input stream to read from
-     * @throws IOException If an error occurs
-     */
-    public void readPreset (final InputStream in) throws IOException
-    {
-        if (this.isVST2)
-            this.readVST2Preset (in);
-        else
-            this.readVST3Preset (in);
+        out.write (data);
     }
 
 
@@ -311,15 +270,16 @@ public class VstChunkHandler
      * Read a VST 2 preset file.
      *
      * @param in The output stream to write to
+     * @return The read preset data
      * @throws IOException If an error occurs
      */
-    private void readVST2Preset (final InputStream in) throws IOException
+    private byte [] readVST2Preset (final InputStream in) throws IOException
     {
         // VST Chunk ID
         in.skipNBytes (4);
 
-        // Size of this chunk
-        this.dataSize = StreamHelper.readIntBigEndian (in) - 48;
+        // Size of this chunk (the following data, header is 48 bytes)
+        StreamHelper.readIntBigEndian (in);
 
         final boolean isOpaque = "FPCh".equals (StreamHelper.readString (in, 4));
         this.dataType = isOpaque ? CHUNK_OPAQUE : CHUNK_REGULAR;
@@ -343,10 +303,9 @@ public class VstChunkHandler
         if (isOpaque)
             StreamHelper.readIntBigEndian (in);
 
-        this.vstData = in.readAllBytes ();
-        this.dataSize = this.vstData.length;
-
         this.programName = "";
+
+        return in.readAllBytes ();
     }
 
 
@@ -354,9 +313,10 @@ public class VstChunkHandler
      * Write a VST 3 preset file.
      *
      * @param out The output stream to write to
+     * @param data
      * @throws IOException If an error occurs
      */
-    private void writeVST3Preset (final OutputStream out) throws IOException
+    private void writeVST3Preset (final OutputStream out, final byte [] data) throws IOException
     {
         // The Reaper data block has the following structure:
         // 4 bytes: Length of the first chunk
@@ -368,7 +328,7 @@ public class VstChunkHandler
 
         final List<byte []> chunks = new ArrayList<> ();
 
-        final ByteArrayInputStream bais = new ByteArrayInputStream (this.vstData);
+        final ByteArrayInputStream bais = new ByteArrayInputStream (data);
         while (bais.available () > 0)
         {
             final int length = StreamHelper.readIntLittleEndian (bais);
@@ -377,7 +337,7 @@ public class VstChunkHandler
         }
 
         if (chunks.size () > 2)
-            throw new IOException ("Found more than 2 VST3 chunks?!");
+            throw new IOException (Functions.getMessage ("IDS_NOTIFY_MORE_THAN_2_VST3_CHUNKS"));
 
         new Vst3Preset ().write (out, this.deviceID, chunks);
     }
@@ -387,9 +347,10 @@ public class VstChunkHandler
      * Read a VST 3 preset file.
      *
      * @param in The output stream to write to
+     * @return The read preset data
      * @throws IOException If an error occurs
      */
-    private void readVST3Preset (final InputStream in) throws IOException
+    private byte [] readVST3Preset (final InputStream in) throws IOException
     {
         final Vst3Preset preset = new Vst3Preset ();
         preset.read (in);
@@ -402,7 +363,7 @@ public class VstChunkHandler
 
         final byte [] data = preset.getData ();
         final Vst3ChunkInfo [] chunkInfos = preset.getChunkInfos ();
-        this.dataSize = data.length + 8 * chunkInfos.length;
+        // Note: dataSize is: data.length + 8 * chunkInfos.length;
 
         final ByteArrayOutputStream out = new ByteArrayOutputStream ();
 
@@ -415,10 +376,10 @@ public class VstChunkHandler
             out.write (data, offset, (int) chunkInfos[i].size);
         }
 
-        this.vstData = out.toByteArray ();
-
         this.programName = "";
         this.presetName = "";
+
+        return out.toByteArray ();
     }
 
 
@@ -432,18 +393,5 @@ public class VstChunkHandler
     {
         final String name = this.presetName.isBlank () ? this.programName : this.presetName;
         return name.length () < 28 ? name : name.substring (0, 27);
-    }
-
-
-    private static void createLines (final Chunk vstChunk, final byte [] lineData)
-    {
-        final String line = new String (lineData, StandardCharsets.US_ASCII);
-        final int length = line.length ();
-        for (int i = 0; i < length; i += 128)
-        {
-            final Node lineNode = new Node ();
-            lineNode.setName (line.substring (i, Math.min (i + 128, length)));
-            vstChunk.addChildNode (lineNode);
-        }
     }
 }
