@@ -149,7 +149,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         convertMetadata (dawProject.getMetadata (), rootChunk);
 
         convertArrangement (project, rootChunk, beatsAndTime);
-        beatsAndTime.destinationIsBeats = true;
+        beatsAndTime.destinationIsBeats = false;
         project.arrangement.lanes.timeUnit = beatsAndTime.destinationIsBeats ? TimeUnit.beats : TimeUnit.seconds;
 
         final FolderStructure structure = new FolderStructure ();
@@ -1038,7 +1038,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             final double offset = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_SAMPLE_OFFSET), 0), false);
             internalClip.time = 0;
             internalClip.playStart = Double.valueOf (offset);
-            internalClip.playStop = Double.valueOf (clip.duration - offset);
+            internalClip.playStop = Double.valueOf (clip.duration + offset);
             internalClip.contentTimeUnit = clip.contentTimeUnit;
             internalClip.duration = clip.duration;
 
