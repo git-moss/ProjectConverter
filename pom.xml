@@ -157,7 +157,7 @@
 					<mainClass>${main.class}</mainClass>
 					<name>${project.name}</name>
 					<appVersion>${project.version}</appVersion>
-					<copyright>(c) 2022 by ${project.organization.name}</copyright>
+					<copyright>(c) 2023 by ${project.organization.name}</copyright>
 					<description>A tool for converting multi-sample from one format to another.</description>
 					<vendor>${project.organization.name}</vendor>
 					<licenseFile>LICENSE</licenseFile>
