@@ -1,0 +1,61 @@
+name: Build and publish jpackage result to GitHub
+
+on:
+  push:
+    branches: [ master ]
+  # Necessary to manually run the workflow
+  workflow_dispatch:
+
+jobs:
+
+  createmanual:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure
+        uses: actions/checkout@v3
+        
+      - name: Create output folder
+        run: |
+          mkdir output  # create output dir
+      
+      - name: Convert MD files to PDF
+        uses: docker://pandoc/latex:2.9
+        with:
+          args: --standalone --toc -V geometry:margin=2.5cm --number-sections --output=output/ProjectConverter-Manual.pdf README.md
+      
+      - name: Publish result
+        uses: actions/upload-artifact@v3
+        with:
+          name: ProjectConverter-Installers
+          path: output/ProjectConverter-Manual.pdf
+
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: ProjectConverter*.deb
+            build_name: linux
+          - os: macos-11
+            artifact_name: ProjectConverter*.dmg
+            build_name: mac
+          - os: windows-latest
+            artifact_name: ProjectConverter*.msi
+            build_name: win
+    
+    name: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: 17
+    - name: Build and jpackage with Maven
+      run: mvn -B package jpackage::jpackage@${{ matrix.build_name }} --file pom.xml
+    - name: Publish jpackage result
+      uses: actions/upload-artifact@v3
+      with:
+        name: ProjectConverter-Installers
+        path: target/release/${{ matrix.artifact_name }}

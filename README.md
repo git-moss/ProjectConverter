@@ -1,6 +1,6 @@
-# dawconverters
+# ProjectConverter
 
-Convert from a specific DAW project format to generic dawproject.
+Converts from a proprietary DAW project format to open DAWproject format.
 
 # Conversion Reaper project / dawproject
 
@@ -43,7 +43,7 @@ Range markers are not supported.
 
 ## Device
 
-* VST 2 and VST 3 devices with their state
+* VST 2, VST 3 and CLAP devices with their state
 * Enabled (bypass)
 * Loaded (offline)
 
@@ -53,7 +53,7 @@ Range markers are not supported.
 * Position
 * Fade in, fade out
 
-## MIDI Items    -> TODO dawproject -> Reaper
+## MIDI Items
 
 * Notes
 * Polyphonic / Channel Aftertouch
