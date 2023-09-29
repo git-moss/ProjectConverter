@@ -35,7 +35,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: ProjectConverter*.deb
+            artifact_name: projectconverter*.deb
             build_name: linux
           - os: macos-11
             artifact_name: ProjectConverter*.dmg
