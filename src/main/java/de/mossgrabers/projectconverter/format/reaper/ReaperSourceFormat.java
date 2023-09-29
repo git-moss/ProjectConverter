@@ -411,7 +411,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final double [] volPan = getDoubleParams (rootChunk.getChildNode (ReaperTags.MASTER_VOLUME_PAN), -1);
         if (volPan.length >= 1)
         {
-            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, Math.min (1, valueToDB (volPan[0], 0)));
+            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, Math.min (1, valueToDb (volPan[0], 0)));
             channel.pan = createRealParameter (Unit.normalized, 0.0, 1.0, (volPan[1] + 1.0) / 2.0);
         }
 
@@ -530,7 +530,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 final double sendVolume = getDoubleParam (sendNode, 2, 1);
 
                 final Send send = new Send ();
-                send.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDB (sendVolume, 12));
+                send.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDb (sendVolume, 12));
                 // TODO set panorama
                 send.name = "Send";
                 send.type = mode == 0 ? SendType.post : SendType.pre;
@@ -552,7 +552,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final double [] volPan = getDoubleParams (trackChunk.getChildNode (ReaperTags.TRACK_VOLUME_PAN), -1);
         if (volPan.length >= 1)
         {
-            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDB (volPan[0], 0));
+            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDb (volPan[0], 0));
             channel.pan = createRealParameter (Unit.normalized, 0.0, 1.0, (volPan[1] + 1.0) / 2.0);
         }
 
@@ -1529,23 +1529,18 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     }
 
 
-    private static double valueToDB (final double x, final double maxLevelDB)
+    private static double valueToDb (final double linearValue, final double maxLevelDB)
     {
-        return dBToLinear (reaperValueToDB (x), maxLevelDB);
+        final double dBValue = linearToDb (linearValue);
+        return Math.pow (10, (dBValue - maxLevelDB) / 20.0);
     }
 
 
-    private static double reaperValueToDB (final double x)
+    private static double linearToDb (final double linearValue)
     {
-        if (x < 0.0000000298023223876953125)
+        if (linearValue < 0.0000000298023223876953125)
             return -150;
-        return Math.max (-150.0, Math.log (x) * 8.6858896380650365530225783783321);
-    }
-
-
-    private static double dBToLinear (final double dBVal, final double maxLevelDB)
-    {
-        return Math.pow (10, (dBVal - maxLevelDB) / 20.0);
+        return Math.max (-150.0, Math.log (linearValue) * 8.6858896380650365530225783783321);
     }
 
 
