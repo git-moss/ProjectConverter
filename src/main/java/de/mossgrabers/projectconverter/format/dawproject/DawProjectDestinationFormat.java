@@ -37,9 +37,9 @@ public class DawProjectDestinationFormat extends AbstractCoreTask implements IDe
 
     /** {@inheritDoc} */
     @Override
-    public boolean needsOverwrite (final DawProjectContainer dawProject, final File outputPath)
+    public boolean needsOverwrite (final String projectName, final File outputPath)
     {
-        return getFile (dawProject, outputPath).exists ();
+        return getFile (projectName, outputPath).exists ();
     }
 
 
@@ -47,7 +47,7 @@ public class DawProjectDestinationFormat extends AbstractCoreTask implements IDe
     @Override
     public void write (final DawProjectContainer dawProject, final File outputPath) throws IOException
     {
-        final File outputFile = getFile (dawProject, outputPath);
+        final File outputFile = getFile (dawProject.getName (), outputPath);
         final Map<File, String> remap = new HashMap<> ();
         for (final Map.Entry<String, File> entry: dawProject.getMediaFiles ().getAll ().entrySet ())
             remap.put (entry.getValue (), entry.getKey ());
@@ -55,8 +55,8 @@ public class DawProjectDestinationFormat extends AbstractCoreTask implements IDe
     }
 
 
-    private static File getFile (final DawProjectContainer dawProject, final File outputPath)
+    private static File getFile (final String projectName, final File outputPath)
     {
-        return new File (outputPath, dawProject.getName () + ".dawproject");
+        return new File (outputPath, projectName + ".dawproject");
     }
 }

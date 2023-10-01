@@ -38,6 +38,7 @@ public class ReaperTags
 
     protected static final String    CHUNK_TRACK                = "TRACK";
     protected static final String    TRACK_NAME                 = "NAME";
+    protected static final String    TRACK_LOCK                 = "LOCK";
     protected static final String    TRACK_COLOR                = "PEAKCOL";
     protected static final String    TRACK_STRUCTURE            = "ISBUS";
     protected static final String    TRACK_NUMBER_OF_CHANNELS   = "NCHAN";

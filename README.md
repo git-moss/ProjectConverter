@@ -42,6 +42,8 @@ Range markers are not supported.
 
 ### Master Track
 
+Must be named 'Master' when exporting from Bitwig.
+
 * Number of audio channels
 * Volume
 * Panorama
@@ -53,6 +55,7 @@ Range markers are not supported.
 
 * Folder structure
 * Track type - midi and audio, aux if it has receives
+* Active state - Reaper has no active state for tracks, instead the track controls are set to locked and all plugins of the track are set to offline.
 * Number of audio channels
 * Volume
 * Panorama
@@ -91,6 +94,21 @@ Range markers are not supported.
 * Track volume
 * Track panorama
 * Track mute
+
+### Known Issues
+
+* No clips in clips in Reaper. Nested clips in a DAWproject are tried to 'flattened', this might have issues.
+* Same for fades which are not on the top level. As a workaround consolidate all clips before export.
+* Currently, no support for:
+   * Built-in devices.
+   * AU plugins.
+   * Video clips.
+   * Panorama on sends (incl. modulation envelope).
+   * VST parameter envelopes.
+   * MIDI parameter envelopes.
+   * Complex routings (beyond normal sends).
+   * Clip comments.
+   * Continuous tempo changes.
 
 [1]: https://mossgrabers.de/Software/ProjectConverter/ProjectConverter.html
 [2]: README-MACOS.md

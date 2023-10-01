@@ -28,9 +28,9 @@ public interface IDestinationFormat extends ICoreTask
     /**
      * Check if the file(s) already exist and therefore need an overwrite confirmation.
      *
-     * @param dawProject The dawproject to store
+     * @param projectName The name of the project
      * @param outputPath The path in which to store the output file(s)
      * @return True if files exist
      */
-    boolean needsOverwrite (DawProjectContainer dawProject, File outputPath);
+    boolean needsOverwrite (String projectName, File outputPath);
 }

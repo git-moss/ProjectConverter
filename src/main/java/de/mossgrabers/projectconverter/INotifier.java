@@ -44,4 +44,20 @@ public interface INotifier
      * @param throwable A throwable
      */
     void logError (Throwable throwable);
+
+
+    /**
+     * Update the button execution states.
+     *
+     * @param canClose Execution can be closed
+     */
+    void updateButtonStates (boolean canClose);
+
+
+    /**
+     * Check if the process should be cancelled.
+     *
+     * @return True if the process should be cancelled.
+     */
+    boolean isCancelled ();
 }

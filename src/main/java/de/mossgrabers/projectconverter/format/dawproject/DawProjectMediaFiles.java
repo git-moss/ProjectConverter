@@ -10,6 +10,7 @@ import com.bitwig.dawproject.DawProject;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collections;
@@ -48,7 +49,14 @@ public class DawProjectMediaFiles implements IMediaFiles
         if (file.exists ())
             return new FileInputStream (file);
 
-        return DawProject.streamEmbedded (this.sourceFile, id);
+        try
+        {
+            return DawProject.streamEmbedded (this.sourceFile, id);
+        }
+        catch (final NullPointerException ex)
+        {
+            throw new FileNotFoundException (this.sourceFile.getPath ());
+        }
     }
 
 

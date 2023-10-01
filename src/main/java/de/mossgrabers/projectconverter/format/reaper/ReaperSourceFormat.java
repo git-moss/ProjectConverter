@@ -8,6 +8,7 @@ import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.AbstractCoreTask;
 import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.ISourceFormat;
+import de.mossgrabers.projectconverter.format.Conversions;
 import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
 import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
 import de.mossgrabers.projectconverter.format.reaper.model.DeviceChunkHandler;
@@ -411,7 +412,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final double [] volPan = getDoubleParams (rootChunk.getChildNode (ReaperTags.MASTER_VOLUME_PAN), -1);
         if (volPan.length >= 1)
         {
-            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, Math.min (1, valueToDb (volPan[0], 0)));
+            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, Math.min (1, Conversions.valueToDb (volPan[0], 0)));
             channel.pan = createRealParameter (Unit.normalized, 0.0, 1.0, (volPan[1] + 1.0) / 2.0);
         }
 
@@ -530,7 +531,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 final double sendVolume = getDoubleParam (sendNode, 2, 1);
 
                 final Send send = new Send ();
-                send.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDb (sendVolume, 12));
+                send.volume = createRealParameter (Unit.linear, 0.0, 1.0, Conversions.valueToDb (sendVolume, 12));
                 // TODO set panorama
                 send.name = "Send";
                 send.type = mode == 0 ? SendType.post : SendType.pre;
@@ -552,7 +553,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final double [] volPan = getDoubleParams (trackChunk.getChildNode (ReaperTags.TRACK_VOLUME_PAN), -1);
         if (volPan.length >= 1)
         {
-            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, valueToDb (volPan[0], 0));
+            channel.volume = createRealParameter (Unit.linear, 0.0, 1.0, Conversions.valueToDb (volPan[0], 0));
             channel.pan = createRealParameter (Unit.normalized, 0.0, 1.0, (volPan[1] + 1.0) / 2.0);
         }
 
@@ -1009,7 +1010,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         clip.name = getParam (itemChunk.getChildNode (ReaperTags.ITEM_NAME), null);
         clip.time = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0), false);
         clip.contentTimeUnit = beatsAndTime.destinationIsBeats ? TimeUnit.beats : TimeUnit.seconds;
-        clip.duration = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false);
+        clip.duration = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false));
 
         // TODO clip.comment -> <ITEM <NOTES -> also in destination format
 
@@ -1038,7 +1039,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             final double offset = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_SAMPLE_OFFSET), 0), false);
             internalClip.time = 0;
             internalClip.playStart = Double.valueOf (offset);
-            internalClip.playStop = Double.valueOf (clip.duration + offset);
+            internalClip.playStop = Double.valueOf (clip.duration.doubleValue () + offset);
             internalClip.contentTimeUnit = clip.contentTimeUnit;
             internalClip.duration = clip.duration;
 
@@ -1046,7 +1047,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             switch (clipType)
             {
                 case "MIDI":
-                    final Lanes lanes = convertMIDI (dawProject, sourceChunk, beatsAndTime);
+                    final boolean isLooped = getIntParam (itemChunk.getChildNode (ReaperTags.ITEM_LOOP), 0) > 0;
+                    final Lanes lanes = convertMIDI (dawProject, sourceChunk, internalClip, isLooped, beatsAndTime);
                     if (lanes != null)
                         internalClip.content = lanes;
                     break;
@@ -1078,11 +1080,13 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param dawProject The dawproject container
      * @param sourceChunk The source chunk which contains the clip data
+     * @param clip The clip which should contain the MIDI events
+     * @param isLooped True if the MIDI clip is looped
      * @param beatsAndTime The beats and/or time conversion information
      * @return The created MIDI lanes
      * @throws ParseException Could not parse the notes
      */
-    private static Lanes convertMIDI (final DawProjectContainer dawProject, final Chunk sourceChunk, final BeatsAndTime beatsAndTime) throws ParseException
+    private static Lanes convertMIDI (final DawProjectContainer dawProject, final Chunk sourceChunk, final Clip clip, final boolean isLooped, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final int ticksPerQuarterNote = readTicksPerQuarterNote (sourceChunk);
         if (ticksPerQuarterNote == -1)
@@ -1093,6 +1097,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         contentLanes.lanes.add (notes);
 
         final Map<ExpressionType, Map<Integer, Map<Integer, Points>>> envelopes = new EnumMap<> (ExpressionType.class);
+        final double beatsPerSecond = dawProject.getBeatsPerSecond ();
 
         // Handle all MIDI events
         final List<ReaperMidiEvent> noteStarts = new ArrayList<> ();
@@ -1127,7 +1132,6 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
                     final double position = noteStart.getPosition () / (double) ticksPerQuarterNote;
                     final double length = (midiEvent.getPosition () - noteStart.getPosition ()) / (double) ticksPerQuarterNote;
-                    final double beatsPerSecond = dawProject.getBeatsPerSecond ();
                     note.time = Double.valueOf (handleMIDITime (beatsAndTime, beatsPerSecond, position));
                     note.duration = Double.valueOf (handleMIDITime (beatsAndTime, beatsPerSecond, length));
                     note.key = noteStart.getData1 ();
@@ -1178,6 +1182,12 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             for (final Map<Integer, Points> envelope: expEnvelopes.values ())
                 for (final Points points: envelope.values ())
                     contentLanes.lanes.add (points);
+
+        if (isLooped)
+        {
+            clip.loopStart = Double.valueOf (0);
+            clip.loopEnd = Double.valueOf (handleMIDITime (beatsAndTime, beatsPerSecond, currentPosition / (double) ticksPerQuarterNote));
+        }
 
         return contentLanes;
     }
@@ -1529,21 +1539,6 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     }
 
 
-    private static double valueToDb (final double linearValue, final double maxLevelDB)
-    {
-        final double dBValue = linearToDb (linearValue);
-        return Math.pow (10, (dBValue - maxLevelDB) / 20.0);
-    }
-
-
-    private static double linearToDb (final double linearValue)
-    {
-        if (linearValue < 0.0000000298023223876953125)
-            return -150;
-        return Math.max (-150.0, Math.log (linearValue) * 8.6858896380650365530225783783321);
-    }
-
-
     /**
      * Get the duration of the audio file from the format object.
      *
@@ -1592,12 +1587,12 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         {
             if (beatsAndTime.sourceIsEnvelopeBeats == beatsAndTime.destinationIsBeats)
                 return time;
-            return beatsAndTime.sourceIsEnvelopeBeats ? toTime (beatsPerSecond, time) : toBeats (beatsPerSecond, time);
+            return beatsAndTime.sourceIsEnvelopeBeats ? Conversions.toTime (time, beatsPerSecond) : Conversions.toBeats (beatsPerSecond, time);
         }
 
         if (beatsAndTime.sourceIsBeats == beatsAndTime.destinationIsBeats)
             return time;
-        return beatsAndTime.sourceIsBeats ? toTime (beatsPerSecond, time) : toBeats (beatsPerSecond, time);
+        return beatsAndTime.sourceIsBeats ? Conversions.toTime (time, beatsPerSecond) : Conversions.toBeats (beatsPerSecond, time);
     }
 
 
@@ -1612,33 +1607,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      */
     private static double handleMIDITime (final BeatsAndTime beatsAndTime, final double beatsPerSecond, final double time)
     {
-        return beatsAndTime.destinationIsBeats ? time : toTime (beatsPerSecond, time);
-    }
-
-
-    /**
-     * Convert the time value to beats.
-     *
-     * @param beatsPerSecond Beats per second
-     * @param value The value in time (seconds)
-     * @return The value in beats
-     */
-    private static double toBeats (final double beatsPerSecond, final double value)
-    {
-        return value * beatsPerSecond;
-    }
-
-
-    /**
-     * Convert the beats value to time.
-     *
-     * @param beatsPerSecond Beats per second
-     * @param value The value in beats
-     * @return The value in time
-     */
-    private static double toTime (final double beatsPerSecond, final double value)
-    {
-        return value / beatsPerSecond;
+        return beatsAndTime.destinationIsBeats ? time : Conversions.toTime (time, beatsPerSecond);
     }
 
 

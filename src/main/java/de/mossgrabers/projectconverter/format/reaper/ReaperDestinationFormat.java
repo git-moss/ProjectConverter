@@ -9,6 +9,7 @@ import de.mossgrabers.projectconverter.core.AbstractCoreTask;
 import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.IDestinationFormat;
 import de.mossgrabers.projectconverter.core.IMediaFiles;
+import de.mossgrabers.projectconverter.format.Conversions;
 import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
 import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
 import de.mossgrabers.projectconverter.format.reaper.model.Node;
@@ -59,6 +60,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -67,11 +69,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
 
 
 /**
@@ -116,15 +121,15 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     /** {@inheritDoc} */
     @Override
-    public boolean needsOverwrite (final DawProjectContainer dawProject, final File outputPath)
+    public boolean needsOverwrite (final String projectName, final File outputPath)
     {
-        return getOutputPath (dawProject, outputPath).exists ();
+        return getOutputPath (projectName, outputPath).exists ();
     }
 
 
-    private static File getOutputPath (final DawProjectContainer dawProject, final File outputPath)
+    private static File getOutputPath (final String projectName, final File outputPath)
     {
-        return new File (outputPath, dawProject.getName ());
+        return new File (outputPath, projectName);
     }
 
 
@@ -174,7 +179,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         parameters.destinationIsBeats = false;
 
         this.convertArrangementLanes (rootChunk, project, masterTrack, parameters, sourceIsBeats);
-        this.saveProject (rootChunk, dawProject, parameters, getOutputPath (dawProject, outputPath));
+        this.saveProject (rootChunk, dawProject, parameters, getOutputPath (dawProject.getName (), outputPath));
     }
 
 
@@ -208,6 +213,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final IMediaFiles mediaFiles = dawProject.getMediaFiles ();
         for (final String audioFile: parameters.audioFiles)
         {
+            if (this.notifier.isCancelled ())
+                return;
+
             final String name = new File (audioFile).getName ();
             final File sampleOutputFile = new File (destinationPath, name);
             try (final InputStream in = mediaFiles.stream (audioFile))
@@ -354,7 +362,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         if (masterTrack.color != null)
             addNode (rootChunk, ReaperTags.MASTER_COLOR, Integer.toString (fromHexColor (masterTrack.color)));
 
-        this.convertDevices (mediaFiles, channel.devices, rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN);
+        this.convertDevices (mediaFiles, channel.devices, masterTrack.loaded == null || masterTrack.loaded.booleanValue (), rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN);
     }
 
 
@@ -422,11 +430,12 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      *
      * @param mediaFiles Access to additional media files
      * @param devices The devices to convert
+     * @param isTrackActive Is the track active?
      * @param parentChunk The chunk where to add the data
      * @param fxChainName The name of the FX chain chunk
      * @throws IOException Could not create the VST chunks
      */
-    private void convertDevices (final IMediaFiles mediaFiles, final List<Device> devices, final Chunk parentChunk, final String fxChainName) throws IOException
+    private void convertDevices (final IMediaFiles mediaFiles, final List<Device> devices, final boolean isTrackActive, final Chunk parentChunk, final String fxChainName) throws IOException
     {
         if (devices == null || devices.isEmpty ())
             return;
@@ -436,7 +445,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         for (final Device device: devices)
         {
             if (device.state != null)
-                this.convertDevice (device, fxChunk, mediaFiles);
+                this.convertDevice (device, fxChunk, mediaFiles, isTrackActive);
         }
     }
 
@@ -447,12 +456,13 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param device The device to convert
      * @param fxChunk The FX chunk where to add the device information
      * @param mediaFiles Access to additional media files
+     * @param isTrackActive Is the track active?
      * @throws IOException Could not create the VST chunks
      */
-    private void convertDevice (final Device device, final Chunk fxChunk, final IMediaFiles mediaFiles) throws IOException
+    private void convertDevice (final Device device, final Chunk fxChunk, final IMediaFiles mediaFiles, final boolean isTrackActive) throws IOException
     {
         final boolean bypass = device.enabled != null && device.enabled.value != null && !device.enabled.value.booleanValue ();
-        final boolean offline = device.loaded != null && !device.loaded.booleanValue ();
+        final boolean offline = !isTrackActive || (device.loaded != null && !device.loaded.booleanValue ());
         addNode (fxChunk, ReaperTags.FXCHAIN_BYPASS, bypass ? "1" : "0", offline ? "1" : "0");
 
         if (device instanceof Vst2Plugin || device instanceof Vst3Plugin)
@@ -506,13 +516,52 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             id.append (">");
         }
         else if (device instanceof Vst3Plugin)
-            id.append ("{").append (device.deviceID).append ("}");
+        {
+            // Quick and dirty endian change
+            final String [] uuidParts = new String [5];
+            uuidParts[0] = device.deviceID.substring (0, 8);
+            uuidParts[1] = device.deviceID.substring (8, 12);
+            uuidParts[2] = device.deviceID.substring (12, 16);
+            uuidParts[3] = device.deviceID.substring (16, 20);
+            uuidParts[4] = device.deviceID.substring (20, 32);
+            final UUID uuid = UUID.fromString (flipBytes (uuidParts[0]) + "-" + flipBytes (uuidParts[1]) + "-" + flipBytes (uuidParts[2]) + "-" + uuidParts[3] + "-" + uuidParts[4]);
+            id.append (calculateFNV1AHash (uuid)).append ("{").append (device.deviceID).append ("}");
+        }
 
         final Chunk vstChunk = addChunk (fxChunk, ReaperTags.CHUNK_VST, createDeviceName (device), "\"\"", "0", "\"\"", id.toString ());
         try (final InputStream in = mediaFiles.stream (device.state.path))
         {
             new VstChunkHandler (device instanceof Vst2Plugin, null).fileToChunk (in, vstChunk);
         }
+    }
+
+
+    private static int calculateFNV1AHash (final UUID uuid)
+    {
+        ByteBuffer buffer = ByteBuffer.wrap (new byte [16]);
+        buffer.putLong (uuid.getMostSignificantBits ());
+        buffer.putLong (uuid.getLeastSignificantBits ());
+
+        final int FNV_PRIME = 0x01000193;
+        final int FNV_OFFSET_BASIS = 0x811c9dc5;
+
+        int checksum = FNV_OFFSET_BASIS;
+        for (int i = 0; i < buffer.capacity (); i++)
+        {
+            checksum ^= buffer.get (i) & 0xFF;
+            checksum *= FNV_PRIME;
+        }
+
+        return checksum & 0x7fffffff;
+    }
+
+
+    private static String flipBytes (final String bytesAsText)
+    {
+        final StringBuilder flipped = new StringBuilder (bytesAsText.length ());
+        for (int i = bytesAsText.length () - 2; i >= 0; i -= 2)
+            flipped.append (bytesAsText.substring (i, i + 2));
+        return flipped.toString ();
     }
 
 
@@ -575,7 +624,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         addNode (trackChunk, ReaperTags.TRACK_MUTE_SOLO, Integer.toString (state));
 
         // Convert all FX devices
-        this.convertDevices (mediaFiles, channel.devices, trackChunk, ReaperTags.CHUNK_FXCHAIN);
+        this.convertDevices (mediaFiles, channel.devices, track.loaded == null || track.loaded.booleanValue (), trackChunk, ReaperTags.CHUNK_FXCHAIN);
     }
 
 
@@ -634,7 +683,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 offset = diff;
                 start = 0;
             }
-            // Limit to max duration depending on the surrounding clip
+            // Limit to maximum duration depending on the surrounding clip
             if (parentDuration != -1 && duration > parentDuration)
                 duration = parentDuration;
             start += parentPosition;
@@ -649,24 +698,16 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             addNode (itemChunk, ReaperTags.ITEM_FADEOUT, "1", handleTime (clip.fadeOutTime, isBeats, parameters).toString (), "0");
 
             if (clip.content instanceof final Notes notes)
-                convertMIDI (clip, notes, itemChunk, sourceIsBeats, parameters);
+                convertMIDI (itemChunk, parameters, clip, notes, duration, sourceIsBeats);
             else if (clip.content instanceof final Audio audio)
-                convertAudio (audio, itemChunk, 1, parameters);
+                convertAudio (itemChunk, parameters, audio, 1);
             else if (clip.content instanceof final Warps warps)
-                this.convertWarps (itemChunk, warps, parameters, sourceIsBeats);
+                convertWarps (itemChunk, parameters, warps, sourceIsBeats);
             else if (clip.content instanceof final Lanes lanes)
-                this.convertLanes (itemChunk, track, lanes, null, null, parameters, sourceIsBeats);
+                this.convertLanes (itemChunk, parameters, track, lanes, null, null, sourceIsBeats);
             else
                 this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", clip.content.getClass ().getName ());
         }
-    }
-
-
-    private void convertWarps (final Chunk itemChunk, final Warps warps, final Parameters parameters, final boolean sourceIsBeats)
-    {
-        final double playrate = calcPlayrate (warps.events, sourceIsBeats, parameters);
-        if (warps.content instanceof final Audio audio)
-            convertAudio (audio, itemChunk, playrate, parameters);
     }
 
 
@@ -693,20 +734,20 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         // Calculate play rate from the 2nd, if there are more warps the result will also not be
         // correct
         final Warp warp2 = events.get (1);
-        final double duration = sourceIsBeats ? toTime (warp2.time, parameters.tempo) : warp2.time;
+        final double duration = sourceIsBeats ? Conversions.toTempoTime (warp2.time, parameters.tempo) : warp2.time;
         return warp2.contentTime / duration;
     }
 
 
     /**
      * Convert an audio clip.
-     *
-     * @param audio The audio file
+     * 
      * @param itemChunk The item chunk
-     * @param playRate The play rate of the media item
      * @param parameters The parameters to add to the node
+     * @param audio The audio file
+     * @param playRate The play rate of the media item
      */
-    private static void convertAudio (final Audio audio, final Chunk itemChunk, final double playRate, final Parameters parameters)
+    private static void convertAudio (final Chunk itemChunk, final Parameters parameters, final Audio audio, final double playRate)
     {
         if (audio.file == null)
             return;
@@ -725,41 +766,78 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     }
 
 
+    private static void convertWarps (final Chunk itemChunk, final Parameters parameters, final Warps warps, final boolean sourceIsBeats)
+    {
+        final double playrate = calcPlayrate (warps.events, sourceIsBeats, parameters);
+        if (warps.content instanceof final Audio audio)
+            convertAudio (itemChunk, parameters, audio, playrate);
+    }
+
+
     /**
      * Convert a MIDI clip.
-     *
+     * 
+     * @param itemChunk The chunk of the media item to fill
+     * @param parameters The parameters to add to the node
      * @param clip The clip to convert
      * @param notes The notes of the clip
-     * @param itemChunk The chunk of the media item to fill
+     * @param clipDuration The duration of the clip
      * @param sourceIsBeats True if the time is in beats otherwise in seconds
-     * @param parameters The parameters to add to the node
      */
-    private static void convertMIDI (final Clip clip, final Notes notes, final Chunk itemChunk, final boolean sourceIsBeats, final Parameters parameters)
+    private static void convertMIDI (final Chunk itemChunk, final Parameters parameters, final Clip clip, final Notes notes, final double clipDuration, final boolean sourceIsBeats)
     {
         final Chunk sourceChunk = addChunk (itemChunk, ReaperTags.CHUNK_ITEM_SOURCE, "MIDI");
-        // Prevent note repetition if last note does not end at the clip end
+
+        // Reaper can only loop the whole clip therefore notes a 'printed' below
         addNode (itemChunk, ReaperTags.ITEM_LOOP, "0");
 
         addNode (sourceChunk, ReaperTags.SOURCE_HASDATA, "1", "960", "QN");
 
         final List<ReaperMidiEvent> events = new ArrayList<> ();
 
-        // Create all note on and off events
+        final double loopStart = clip.loopStart == null ? 0 : clip.loopStart.doubleValue ();
+        final double loopEnd;
+        if (clip.loopEnd == null)
+            loopEnd = sourceIsBeats ? clipDuration : Conversions.toTempoBeats (clipDuration, parameters.tempo);
+        else
+            loopEnd = sourceIsBeats ? clip.loopEnd.doubleValue () : Conversions.toTempoBeats (clip.loopEnd.doubleValue (), parameters.tempo);
+        final double loopDuration = loopEnd - loopStart;
+
+        // Create all note on and off events for notes before the start of the loop, collect notes
+        // in the loop
+        final List<Note> notesInLoop = new ArrayList<> ();
         for (final Note note: notes.notes)
         {
             // Time is always in beats for MIDI events!
-            final long startPosition = (long) ((sourceIsBeats ? note.time.doubleValue () : toBeats (note.time.doubleValue (), parameters.tempo)) * TICKS_PER_QUARTER_NOTE);
-            final long endPosition = startPosition + (long) ((sourceIsBeats ? note.duration.doubleValue () : toBeats (note.duration.doubleValue (), parameters.tempo)) * TICKS_PER_QUARTER_NOTE);
-            final int velocity = note.velocity == null ? 0 : (int) (note.velocity.doubleValue () * 127.0);
-            final int releaseVelocity = note.releaseVelocity == null ? 0 : (int) (note.releaseVelocity.doubleValue () * 127.0);
-
-            events.add (new ReaperMidiEvent (startPosition, note.channel, 0x90, note.key, velocity));
-            events.add (new ReaperMidiEvent (endPosition, note.channel, 0x80, note.key, releaseVelocity));
+            final double noteStart = note.time.doubleValue ();
+            if (noteStart < loopStart)
+                createNoteEvent (events, note, noteStart, note.duration.doubleValue (), parameters.tempo, sourceIsBeats);
+            else if (noteStart < loopEnd)
+                notesInLoop.add (note);
         }
-        // TODO padding till the end of the clip with: "E 480 b0 7b 00"
-        // TODO Enable ITEM_LOOP if looped
 
-        // TODO add all MIDI envelope parameters
+        // Fill in notes inside of the loop until the end of the clip
+        double offset = 0;
+        while (offset < clipDuration)
+        {
+            final double offsetLoopEnd = offset + loopDuration;
+            for (final Note note: notesInLoop)
+            {
+                final double noteStart = offset + note.time.doubleValue ();
+                if (noteStart < clipDuration)
+                {
+                    double noteDuration = note.duration.doubleValue ();
+                    // Clip notes at the end of the loop
+                    if (noteStart + noteDuration > offsetLoopEnd)
+                        noteDuration = offsetLoopEnd - noteStart;
+                    // Clip notes at the end of the clip
+                    if (noteStart + noteDuration > clipDuration)
+                        noteDuration = clipDuration - noteStart;
+                    createNoteEvent (events, note, noteStart, noteDuration, parameters.tempo, sourceIsBeats);
+                }
+            }
+            offset = offsetLoopEnd;
+        }
 
         // Sort the events by their time position
         Collections.sort (events, (o1, o2) -> (int) (o1.getPosition () - o2.getPosition ()));
@@ -773,6 +851,13 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             lastPosition = currentPosition;
             sourceChunk.addChildNode (event.toNode ());
         }
+
+        // Add padding from the last note till the end of the clip with: "E 480 b0 7b 00"
+        final long padding = (long) ((clipDuration - lastPosition) * TICKS_PER_QUARTER_NOTE);
+        final ReaperMidiEvent event = new ReaperMidiEvent (padding, 0, 0xB0, 0x7B, 0);
+        sourceChunk.addChildNode (event.toNode ());
+
+        // TODO add all MIDI envelope parameters
     }
 
 
@@ -795,14 +880,14 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             if (timeline instanceof final Markers markers && markers.markers != null)
                 convertMarkers (rootChunk, parameters, markers, sourceIsBeats);
             else if (timeline instanceof final Lanes lanes && lanes.track != null)
-                this.convertLanes (rootChunk, null, lanes, project, masterTrack, parameters, sourceIsBeats);
+                this.convertLanes (rootChunk, parameters, null, lanes, project, masterTrack, sourceIsBeats);
         }
 
         createTempoSignatureEnvelope (sourceIsBeats, rootChunk, parameters);
     }
 
 
-    private void convertLanes (final Chunk rootOrItemChunk, final Track ownerTrack, final Lanes lanes, final Project project, final Track masterTrack, final Parameters parameters, final boolean sourceIsBeats)
+    private void convertLanes (final Chunk rootOrItemChunk, final Parameters parameters, final Track ownerTrack, final Lanes lanes, final Project project, final Track masterTrack, final boolean sourceIsBeats)
     {
         final Track track = lanes.track == null ? ownerTrack : lanes.track;
         final Chunk trackChunk = track == masterTrack ? rootOrItemChunk : parameters.chunkMapping.get (track);
@@ -823,7 +908,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             else if (trackTimeline instanceof final Clips clips)
                 this.convertItems (trackChunk, track, clips, 0, -1, 0, isBeats, parameters);
             else if (trackTimeline instanceof final Warps warps)
-                this.convertWarps (rootOrItemChunk, warps, parameters, sourceIsBeats);
+                convertWarps (rootOrItemChunk, parameters, warps, sourceIsBeats);
         }
     }
 
@@ -990,16 +1075,18 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * Set the basic track information, like structure, name and color.
      *
      * @param trackChunk The track chunk to add the information
-     * @param Track The dawproject object
+     * @param track The DAWproject object
      * @param type The folder type
      * @param direction The level direction
      */
-    private static void createTrack (final Chunk trackChunk, final Track Track, final int type, final int direction)
+    private static void createTrack (final Chunk trackChunk, final Track track, final int type, final int direction)
     {
-        addNode (trackChunk, ReaperTags.TRACK_NAME, Track.name);
+        addNode (trackChunk, ReaperTags.TRACK_NAME, track.name);
+        if (track.loaded != null && !track.loaded.booleanValue ())
+            addNode (trackChunk, ReaperTags.TRACK_LOCK, "1");
         addNode (trackChunk, ReaperTags.TRACK_STRUCTURE, Integer.toString (type), Integer.toString (direction));
-        if (Track.color != null)
-            addNode (trackChunk, ReaperTags.TRACK_COLOR, Integer.toString (fromHexColor (Track.color)));
+        if (track.color != null)
+            addNode (trackChunk, ReaperTags.TRACK_COLOR, Integer.toString (fromHexColor (track.color)));
     }
 
 
@@ -1091,6 +1178,17 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         if (device.deviceVendor != null)
             name.append (" (").append (device.deviceVendor).append (")");
         return name.toString ();
+    }
+
+
+    private static void createNoteEvent (final List<ReaperMidiEvent> events, final Note note, final double noteStart, final double noteDuration, final Double tempo, final boolean sourceIsBeats)
+    {
+        final long startPosition = (long) ((sourceIsBeats ? noteStart : Conversions.toTempoBeats (noteStart, tempo)) * TICKS_PER_QUARTER_NOTE);
+        final long endPosition = startPosition + (long) ((sourceIsBeats ? noteDuration : Conversions.toTempoBeats (noteDuration, tempo)) * TICKS_PER_QUARTER_NOTE);
+        final int velocity = note.velocity == null ? 0 : (int) (note.velocity.doubleValue () * 127.0);
+        final int releaseVelocity = note.releaseVelocity == null ? 0 : (int) (note.releaseVelocity.doubleValue () * 127.0);
+        events.add (new ReaperMidiEvent (startPosition, note.channel, 0x90, note.key, velocity));
+        events.add (new ReaperMidiEvent (endPosition, note.channel, 0x80, note.key, releaseVelocity));
     }
 
 
@@ -1188,41 +1286,13 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     {
         if (sourceIsBeats == parameters.destinationIsBeats)
             return time;
-        return sourceIsBeats ? toTime (time, parameters.tempo) : toBeats (time, parameters.tempo);
+        return sourceIsBeats ? Conversions.toTempoTime (time, parameters.tempo) : Conversions.toTempoBeats (time, parameters.tempo);
     }
 
 
     private static boolean updateIsBeats (final Timeline timeline, final boolean isBeats)
     {
         return timeline.timeUnit == null ? isBeats : timeline.timeUnit == TimeUnit.beats;
-    }
-
-
-    /**
-     * Convert the time value to beats.
-     *
-     * @param timeInSeconds The value in time
-     * @param tempo The tempo
-     * @return The value in beats
-     */
-    private static double toBeats (final double timeInSeconds, final Double tempo)
-    {
-        final double beatsPerSecond = tempo.doubleValue () / 60.0;
-        return beatsPerSecond * timeInSeconds;
-    }
-
-
-    /**
-     * Convert the beats value to time.
-     *
-     * @param timeInBeats The value in beats
-     * @param tempo The tempo
-     * @return The value in time
-     */
-    private static double toTime (final double timeInBeats, final Double tempo)
-    {
-        final double beatsPerSecond = tempo.doubleValue () / 60.0;
-        return timeInBeats / beatsPerSecond;
     }
 
 
@@ -1254,7 +1324,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         if (volume == null)
             return "0";
         final double value = this.getDoubleValue (volume, Unit.linear);
-        return Double.toString (dBToValue (value, 0));
+        return Double.toString (Conversions.dBToValue (value, 0));
     }
 
 
@@ -1282,21 +1352,6 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     }
 
 
-    private static double dBToValue (final double dbValue, final double maxLevelDB)
-    {
-        final double linearValue = dbToLinear (dbValue);
-        return 20 * Math.log10 (linearValue) + maxLevelDB;
-    }
-
-
-    private static double dbToLinear (final double dbValue)
-    {
-        if (dbValue <= -150)
-            return 0.0000000298023223876953125;
-        return Math.exp (dbValue / 8.6858896380650365530225783783321);
-    }
-
-
     private static class Parameters
     {
         private Points                    tempoEnvelope;
@@ -1304,7 +1359,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         private Double                    tempo;
         private int                       numerator;
         private int                       denominator;
-        private final List<String>        audioFiles     = new ArrayList<> ();
+        private final Set<String>         audioFiles     = new HashSet<> ();
         private boolean                   destinationIsBeats;
 
         private final Map<Track, Chunk>   chunkMapping   = new HashMap<> ();

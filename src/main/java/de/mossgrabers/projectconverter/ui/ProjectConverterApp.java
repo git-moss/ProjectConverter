@@ -1,17 +1,18 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2019-2022
+// (c) 2021-2023
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.ui;
 
 import de.mossgrabers.projectconverter.INotifier;
-import de.mossgrabers.projectconverter.core.DawProjectContainer;
+import de.mossgrabers.projectconverter.core.ConversionTask;
 import de.mossgrabers.projectconverter.core.IDestinationFormat;
 import de.mossgrabers.projectconverter.core.ISourceFormat;
 import de.mossgrabers.projectconverter.format.dawproject.DawProjectDestinationFormat;
 import de.mossgrabers.projectconverter.format.dawproject.DawProjectSourceFormat;
 import de.mossgrabers.projectconverter.format.reaper.ReaperDestinationFormat;
 import de.mossgrabers.projectconverter.format.reaper.ReaperSourceFormat;
+import de.mossgrabers.tools.FileUtils;
 import de.mossgrabers.tools.ui.AbstractFrame;
 import de.mossgrabers.tools.ui.DefaultApplication;
 import de.mossgrabers.tools.ui.EndApplicationException;
@@ -21,8 +22,6 @@ import de.mossgrabers.tools.ui.control.TitledSeparator;
 import de.mossgrabers.tools.ui.panel.BasePanel;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
 import de.mossgrabers.tools.ui.panel.ButtonPanel;
-
-import com.bitwig.dawproject.DawProject;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -38,13 +37,15 @@ import javafx.scene.image.Image;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
+import javafx.scene.web.WebView;
 import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
 
 import java.io.File;
-import java.io.IOException;
-import java.text.ParseException;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 /**
@@ -54,17 +55,16 @@ import java.util.Optional;
  */
 public class ProjectConverterApp extends AbstractFrame implements INotifier
 {
-    private static final String         ENABLE_DARK_MODE = "EnableDarkMode";
-    private static final String         DESTINATION_PATH = "DestinationPath";
-    private static final String         DESTINATION_TYPE = "DestinationType";
-    private static final String         SOURCE_PATH      = "SourcePath";
-    private static final String         SOURCE_TYPE      = "SourceType";
+    private static final String         ENABLE_DARK_MODE  = "EnableDarkMode";
+    private static final String         DESTINATION_PATH  = "DestinationPath";
+    private static final String         DESTINATION_TYPE  = "DestinationType";
+    private static final String         SOURCE_PATH       = "SourcePath";
+    private static final String         SOURCE_TYPE       = "SourceType";
 
     private final ISourceFormat []      sourceFormats;
     private final IDestinationFormat [] destinationFormats;
     private final ExtensionFilter []    sourceExtensionFilters;
 
-    private BorderPane                  mainPane;
     private TextField                   sourceFileField;
     private TextField                   destinationPathField;
     private File                        sourceFile;
@@ -72,7 +72,12 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     private CheckBox                    enableDarkMode;
     private TabPane                     sourceTabPane;
     private TabPane                     destinationTabPane;
-    private final LoggerBox             loggingArea      = new LoggerBox ();
+    private Button                      convertButton;
+    private Button                      cancelButton;
+    private final LoggerBox             loggingArea       = new LoggerBox ();
+
+    private final ExecutorService       executor          = Executors.newSingleThreadExecutor ();
+    private Optional<ConversionTask>    conversionTaskOpt = Optional.empty ();
 
 
     /**
@@ -122,8 +127,10 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         // The main button panel
         final ButtonPanel buttonPanel = new ButtonPanel (Orientation.VERTICAL);
-        final Button convertButton = setupButton (buttonPanel, "Convert", "@IDS_MAIN_CONVERT");
-        convertButton.setOnAction (event -> this.execute ());
+        this.convertButton = setupButton (buttonPanel, "Convert", "@IDS_MAIN_CONVERT");
+        this.convertButton.setOnAction (event -> this.execute ());
+        this.cancelButton = setupButton (buttonPanel, "Cancel", "@IDS_MAIN_CANCEL");
+        this.cancelButton.setOnAction (event -> this.cancelExecution ());
 
         final ButtonPanel optionsPanel = new ButtonPanel (Orientation.VERTICAL);
         this.enableDarkMode = optionsPanel.createCheckBox ("@IDS_MAIN_ENABLE_DARK_MODE", "@IDS_MAIN_ENABLE_DARK_MODE_TOOLTIP");
@@ -194,16 +201,21 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         HBox.setHgrow (sourcePane, Priority.ALWAYS);
         HBox.setHgrow (destinationPane, Priority.ALWAYS);
 
-        this.mainPane = new BorderPane ();
-        this.mainPane.setCenter (grid);
-        this.mainPane.setRight (buttonPane);
-        this.mainPane.setBottom (this.loggingArea.getWebView ());
+        final BorderPane mainPane = new BorderPane ();
+        mainPane.setTop (grid);
+        mainPane.setRight (buttonPane);
+        final WebView webView = this.loggingArea.getWebView ();
+        final StackPane stackPane = new StackPane (webView);
+        stackPane.getStyleClass ().add ("padding");
 
-        this.setCenterNode (this.mainPane);
+        mainPane.setCenter (stackPane);
+
+        this.setCenterNode (mainPane);
 
         this.loadConfig ();
 
         this.updateTitle (null);
+        this.updateButtonStates (false);
     }
 
 
@@ -238,6 +250,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     @Override
     public void exit ()
     {
+        this.executor.shutdown ();
+
         this.config.setProperty (SOURCE_PATH, this.sourceFileField.getText ());
         this.config.setProperty (DESTINATION_PATH, this.destinationPathField.getText ());
         this.config.setBoolean (ENABLE_DARK_MODE, this.enableDarkMode.isSelected ());
@@ -276,66 +290,46 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         this.loggingArea.clear ();
 
+        final IDestinationFormat destinationFormat = this.destinationFormats[selectedDestinationFormat];
+
+        // Check for overwrite
+        final String projectName = FileUtils.getNameWithoutType (this.sourceFile);
+        if (destinationFormat.needsOverwrite (projectName, this.outputPath) && !Functions.yesOrNo ("@IDS_NOTIFY_OVERWRITE"))
+        {
+            this.log ("IDS_NOTIFY_CANCELED");
+            return;
+        }
+
         Platform.runLater ( () -> {
 
-            // Parse the project file
-            this.log ("IDS_NOTIFY_PARSING_FILE", this.sourceFile.getAbsolutePath ());
-
-            Platform.runLater ( () -> {
-                final DawProjectContainer dawProject;
-                try
-                {
-                    dawProject = this.sourceFormats[selectedSourceFormat].read (this.sourceFile);
-                }
-                catch (final IOException | ParseException ex)
-                {
-                    this.logError ("IDS_NOTIFY_COULD_NOT_READ", ex);
-                    return;
-                }
-
-                try
-                {
-                    DawProject.validate (dawProject.getProject ());
-                }
-                catch (final IOException ex)
-                {
-                    this.logError ("IDS_NOTIFY_COULD_NOT_VALIDATE_PROJECT", ex);
-                }
-
-                // Check for overwrite
-                if (this.destinationFormats[selectedDestinationFormat].needsOverwrite (dawProject, this.outputPath))
-                {
-                    if (!Functions.yesOrNo ("@IDS_NOTIFY_OVERWRITE"))
-                    {
-                        this.log ("IDS_NOTIFY_CANCELED");
-                        return;
-                    }
-                }
-
-                Platform.runLater ( () -> {
-                    // Write output file(s)
-                    this.log ("IDS_NOTIFY_WRITING_FILE", this.outputPath.getAbsolutePath ());
-
-                    Platform.runLater ( () -> {
-
-                        try
-                        {
-                            this.destinationFormats[selectedDestinationFormat].write (dawProject, this.outputPath);
-                        }
-                        catch (final IOException ex)
-                        {
-                            this.logError ("IDS_NOTIFY_COULD_NOT_WRITE_FILE", ex);
-                            return;
-                        }
-
-                        this.log ("IDS_NOTIFY_CONVERSION_FINISHED");
-                    });
-
-                });
-
-            });
+            final ConversionTask conversionTask = new ConversionTask (this.sourceFile, this.outputPath, this.sourceFormats[selectedSourceFormat], destinationFormat, this);
+            this.conversionTaskOpt = Optional.of (conversionTask);
+            conversionTask.setOnCancelled (event -> this.updateButtonStates (false));
+            conversionTask.setOnFailed (event -> this.updateButtonStates (false));
+            conversionTask.setOnSucceeded (event -> this.updateButtonStates (false));
+            conversionTask.setOnRunning (event -> this.updateButtonStates (true));
+            conversionTask.setOnScheduled (event -> this.updateButtonStates (true));
+            this.executor.execute (conversionTask);
 
         });
+    }
+
+
+    /**
+     * Cancel button was pressed.
+     */
+    private void cancelExecution ()
+    {
+        if (this.conversionTaskOpt.isPresent ())
+            this.conversionTaskOpt.get ().cancel ();
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public boolean isCancelled ()
+    {
+        return this.conversionTaskOpt.isPresent () && this.conversionTaskOpt.get ().isCancelled ();
     }
 
 
@@ -473,6 +467,17 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     public void logError (final Throwable throwable)
     {
         this.loggingArea.notifyError (throwable.getMessage (), throwable);
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void updateButtonStates (final boolean isExecuting)
+    {
+        Platform.runLater ( () -> {
+            this.cancelButton.setDisable (!isExecuting);
+            this.convertButton.setDisable (isExecuting);
+        });
     }
 
 
