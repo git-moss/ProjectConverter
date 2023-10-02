@@ -265,12 +265,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
         // Comment goes into the Notes
         if (metadata.comment != null)
-        {
-            final Chunk notesChunk = addChunk (rootChunk, ReaperTags.PROJECT_NOTES, "0");
-            final String [] commentLines = metadata.comment.split ("\\R");
-            for (final String line: commentLines)
-                addNode (notesChunk, "|" + line);
-        }
+            createNotesChunk (rootChunk, metadata.comment, ReaperTags.PROJECT_NOTES);
 
         // Fill render metadata
         final Chunk renderChunk = addChunk (rootChunk, ReaperTags.PROJECT_RENDER_METADATA);
@@ -296,6 +291,15 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TYER", metadata.year);
         if (metadata.album != null)
             addNode (renderChunk, ReaperTags.METADATA_TAG, "ID3:TALB", metadata.album);
+    }
+
+
+    private static void createNotesChunk (final Chunk rootChunk, final String comment, final String tag)
+    {
+        final Chunk notesChunk = addChunk (rootChunk, tag, "0");
+        final String [] commentLines = comment.split ("\\R");
+        for (final String line: commentLines)
+            addNode (notesChunk, "|" + line);
     }
 
 
@@ -654,6 +658,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             // Cannot group clips in clips in Reaper, therefore only create the most inner clips
             if (clip.content instanceof final Clips groupedClips)
             {
+                parentClip.comment = clip.comment;
                 parentClip.loopStart = clip.loopStart == null ? 0 : clip.loopStart.doubleValue ();
                 parentClip.loopEnd = clip.loopEnd == null ? -1 : clip.loopEnd.doubleValue ();
                 parentClip.position = parentClipPosition + clip.time;
@@ -684,6 +689,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             start += parentClip.position;
 
             Chunk itemChunk = createClipChunk (trackChunk, clip, start, duration, offset, parameters, isBeats);
+
+            if (parentClip.comment != null && !parentClip.comment.isBlank ())
+                createNotesChunk (itemChunk, parentClip.comment, ReaperTags.PROJECT_NOTES);
 
             if (clip.content instanceof final Notes notes)
                 convertMIDI (itemChunk, parameters, clip, notes, duration, sourceIsBeats);
@@ -1415,15 +1423,16 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
     private static class ParentClip
     {
+        public String comment;
         // The start of the loop
-        double loopEnd;
+        double        loopEnd;
         // The end of the loop
-        double loopStart;
+        double        loopStart;
         // The time at which the parent clip starts
-        double position = 0;
+        double        position = 0;
         // The duration of the parent clip
-        double duration = -1;
+        double        duration = -1;
         // An offset to the play start in the clip
-        double offset = 0;
+        double        offset   = 0;
     }
 }

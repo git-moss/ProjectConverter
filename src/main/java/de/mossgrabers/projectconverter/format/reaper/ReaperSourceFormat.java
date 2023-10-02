@@ -201,21 +201,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         }
         final Optional<Node> notesParameter = rootChunk.getChildNode (ReaperTags.PROJECT_NOTES);
         if (notesParameter.isPresent () && notesParameter.get () instanceof final Chunk notesChunk)
-        {
-            final StringBuilder comment = new StringBuilder ();
-            for (final Node commentLine: notesChunk.getChildNodes ())
-            {
-                final String line = commentLine.getLine ();
-                final int pos = line.indexOf ('|');
-                if (pos != -1)
-                {
-                    if (!comment.isEmpty ())
-                        comment.append ("\r\n");
-                    comment.append (line.substring (pos + 1, line.length ()));
-                }
-            }
-            metadata.comment = comment.toString ();
-        }
+            metadata.comment = readNotes (notesChunk);
 
         // Use metadata from the render metadata setting (File -> Project Render Metadata)
         final Optional<Node> renderMetadataParameter = rootChunk.getChildNode (ReaperTags.PROJECT_RENDER_METADATA);
@@ -228,6 +214,24 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             for (final Node tagNode: renderMetadataChunk.getChildNodes ())
                 handleMetadataTag (metadata, tagNode);
         }
+    }
+
+
+    private static String readNotes (final Chunk notesChunk)
+    {
+        final StringBuilder comment = new StringBuilder ();
+        for (final Node commentLine: notesChunk.getChildNodes ())
+        {
+            final String line = commentLine.getLine ();
+            final int pos = line.indexOf ('|');
+            if (pos != -1)
+            {
+                if (!comment.isEmpty ())
+                    comment.append ("\r\n");
+                comment.append (line.substring (pos + 1, line.length ()));
+            }
+        }
+        return comment.toString ();
     }
 
 
@@ -1016,7 +1020,6 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         try
         {
-
             final double beatsPerSecond = dawProject.getBeatsPerSecond ();
 
             clip.name = getParam (itemChunk.getChildNode (ReaperTags.ITEM_NAME), null);
@@ -1024,7 +1027,9 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             clip.contentTimeUnit = beatsAndTime.destinationIsBeats ? TimeUnit.beats : TimeUnit.seconds;
             clip.duration = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false));
 
-            // TODO clip.comment -> <ITEM <NOTES -> also in destination format
+            final Optional<Node> notesParameter = itemChunk.getChildNode (ReaperTags.ITEM_NOTES);
+            if (notesParameter.isPresent () && notesParameter.get () instanceof final Chunk notesChunk)
+                clip.comment = readNotes (notesChunk);
 
             // FADEIN 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
             final int [] fadeInParams = getIntParams (itemChunk.getChildNode (ReaperTags.ITEM_FADEIN), 0);

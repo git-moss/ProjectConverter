@@ -117,6 +117,7 @@ Must be named 'Master' when exporting from Bitwig.
 * New: Added more logging and cancelation option when compressing audio files into a DAWproject.
 * New: Implemented converting looped audio clips in both directions.
 * New: Added support for OGG files when converting from Reaper.
+* New: Added conversion of clip comments.
 * Fixed: Converting VST3 states from Reaper could crash.
 
 [1]: https://mossgrabers.de/Software/ProjectConverter/ProjectConverter.html
