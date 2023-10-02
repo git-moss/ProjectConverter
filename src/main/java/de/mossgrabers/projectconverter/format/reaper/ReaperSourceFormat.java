@@ -58,6 +58,10 @@ import com.bitwig.dawproject.timeline.RealPoint;
 import com.bitwig.dawproject.timeline.TimeSignaturePoint;
 import com.bitwig.dawproject.timeline.TimeUnit;
 
+import org.gagravarr.ogg.OggFile;
+import org.gagravarr.vorbis.VorbisFile;
+import org.gagravarr.vorbis.VorbisInfo;
+
 import javafx.stage.FileChooser.ExtensionFilter;
 
 import javax.sound.sampled.AudioFileFormat;
@@ -68,6 +72,7 @@ import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.UnsupportedAudioFileException;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -95,7 +100,7 @@ import java.util.regex.Pattern;
  */
 public class ReaperSourceFormat extends AbstractCoreTask implements ISourceFormat
 {
-    private static final Pattern         PATTERN_DEVICE_DESCRIPTION = Pattern.compile ("(VST|VSTi|VST3|VST3i|CLAP|CLAPi)?:\\s(.*)\\s\\((.*)\\)");
+    private static final Pattern         PATTERN_DEVICE_DESCRIPTION = Pattern.compile ("(VST|VSTi|VST3|VST3i|CLAP|CLAPi)?:\\s(.*)(\\s\\((.*)\\))?");
     private static final Pattern         PATTERN_VST2_ID            = Pattern.compile ("(.*)<.*");
     private static final Pattern         PATTERN_VST3_ID            = Pattern.compile (".*\\{(.*)\\}");
     private static final ExtensionFilter EXTENSION_FILTER           = new ExtensionFilter ("Reaper Project", "*.rpp", "*.rpp-bak");
@@ -158,8 +163,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         convertTransport (project, rootChunk);
         convertMarkers (dawProject, rootChunk, beatsAndTime);
-        convertMaster (dawProject, rootChunk, structure, beatsAndTime);
-        convertTracks (dawProject, rootChunk, sourceFile.getParentFile (), structure, beatsAndTime);
+        this.convertMaster (dawProject, rootChunk, structure, beatsAndTime);
+        this.convertTracks (dawProject, rootChunk, sourceFile.getParentFile (), structure, beatsAndTime);
 
         project.structure.addAll (structure.folderTracks);
 
@@ -943,7 +948,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         }
         catch (final IOException ex)
         {
-            throw new ParseException ("Could not store plugin state: " + ex.getLocalizedMessage (), 0);
+            this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CONVERT_PLUGIN_STATE", device.deviceName);
         }
 
         return device;
@@ -964,6 +969,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     {
         final Clips clips = new Clips ();
         trackLanes.lanes.add (clips);
+        clips.timeUnit = TimeUnit.beats;
 
         for (final Node node: trackChunk.getChildNodes ())
         {
@@ -1005,73 +1011,95 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     {
         final Clip clip = new Clip ();
 
-        final double beatsPerSecond = dawProject.getBeatsPerSecond ();
+        final boolean destinationIsBeatsBackup = beatsAndTime.destinationIsBeats;
+        beatsAndTime.destinationIsBeats = true;
 
-        clip.name = getParam (itemChunk.getChildNode (ReaperTags.ITEM_NAME), null);
-        clip.time = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0), false);
-        clip.contentTimeUnit = beatsAndTime.destinationIsBeats ? TimeUnit.beats : TimeUnit.seconds;
-        clip.duration = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false));
-
-        // TODO clip.comment -> <ITEM <NOTES -> also in destination format
-
-        // FADEIN 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
-        final int [] fadeInParams = getIntParams (itemChunk.getChildNode (ReaperTags.ITEM_FADEIN), 0);
-        if (fadeInParams.length > 1 && fadeInParams[1] > 0)
-            clip.fadeInTime = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, fadeInParams[1], false));
-
-        // FADEOUT 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
-        final int [] fadeOutParams = getIntParams (itemChunk.getChildNode (ReaperTags.ITEM_FADEOUT), 0);
-        if (fadeOutParams.length > 1 && fadeOutParams[1] > 0)
-            clip.fadeOutTime = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, fadeOutParams[1], false));
-
-        final Optional<Node> source = itemChunk.getChildNode (ReaperTags.CHUNK_ITEM_SOURCE);
-        if (source.isEmpty ())
-            return null;
-
-        final Node sourceNode = source.get ();
-        if (sourceNode instanceof final Chunk sourceChunk)
+        try
         {
-            final List<String> parameters = sourceChunk.getParameters ();
-            if (parameters.isEmpty ())
-                return null;
 
-            final Clip internalClip = new Clip ();
-            final double offset = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_SAMPLE_OFFSET), 0), false);
-            internalClip.time = 0;
-            internalClip.playStart = Double.valueOf (offset);
-            internalClip.playStop = Double.valueOf (clip.duration.doubleValue () + offset);
-            internalClip.contentTimeUnit = clip.contentTimeUnit;
-            internalClip.duration = clip.duration;
+            final double beatsPerSecond = dawProject.getBeatsPerSecond ();
 
-            final String clipType = parameters.get (0);
-            switch (clipType)
+            clip.name = getParam (itemChunk.getChildNode (ReaperTags.ITEM_NAME), null);
+            clip.time = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0), false);
+            clip.contentTimeUnit = beatsAndTime.destinationIsBeats ? TimeUnit.beats : TimeUnit.seconds;
+            clip.duration = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1), false));
+
+            // TODO clip.comment -> <ITEM <NOTES -> also in destination format
+
+            // FADEIN 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
+            final int [] fadeInParams = getIntParams (itemChunk.getChildNode (ReaperTags.ITEM_FADEIN), 0);
+            if (fadeInParams.length > 1 && fadeInParams[1] > 0)
+                clip.fadeInTime = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, fadeInParams[1], false));
+
+            // FADEOUT 1 0 0 1 0 0 0 - 2nd parameter is fade-in time in seconds
+            final int [] fadeOutParams = getIntParams (itemChunk.getChildNode (ReaperTags.ITEM_FADEOUT), 0);
+            if (fadeOutParams.length > 1 && fadeOutParams[1] > 0)
+                clip.fadeOutTime = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, fadeOutParams[1], false));
+
+            final Optional<Node> source = itemChunk.getChildNode (ReaperTags.CHUNK_ITEM_SOURCE);
+            if (source.isPresent ())
             {
-                case "MIDI":
+                final Node sourceNode = source.get ();
+                if (sourceNode instanceof final Chunk sourceChunk)
+                {
+                    final List<String> parameters = sourceChunk.getParameters ();
+                    if (parameters.isEmpty ())
+                        return null;
+
+                    final Clip internalClip = new Clip ();
+                    final double offset = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_SAMPLE_OFFSET), 0), false);
+                    internalClip.time = 0;
+                    internalClip.playStart = Double.valueOf (offset);
+                    // internalClip.playStop = Double.valueOf (clip.duration.doubleValue () +
+                    // offset);
+                    internalClip.contentTimeUnit = clip.contentTimeUnit;
+                    internalClip.duration = clip.duration;
+
+                    final String clipType = parameters.get (0);
+                    double loopLength = 0;
+                    switch (clipType)
+                    {
+                        case "MIDI":
+                            final Lanes lanes = new Lanes ();
+                            internalClip.content = lanes;
+                            loopLength = convertMIDI (dawProject, sourceChunk, lanes, beatsAndTime);
+                            break;
+
+                        case "WAVE":
+                            final Audio audio = convertAudio (dawProject, sourceChunk, sourcePath);
+                            if (audio == null)
+                                return null;
+                            internalClip.content = audio;
+                            loopLength = handleTime (beatsAndTime, beatsPerSecond, audio.duration, false);
+                            break;
+
+                        default:
+                            // Not supported
+                            this.notifier.log ("IDS_NOTIFY_CLIPTYPE_NOT_SUPPORTED", clipType);
+                            return null;
+                    }
+
                     final boolean isLooped = getIntParam (itemChunk.getChildNode (ReaperTags.ITEM_LOOP), 0) > 0;
-                    final Lanes lanes = convertMIDI (dawProject, sourceChunk, internalClip, isLooped, beatsAndTime);
-                    if (lanes != null)
-                        internalClip.content = lanes;
-                    break;
+                    if (isLooped)
+                    {
+                        clip.loopStart = Double.valueOf (0);
+                        clip.loopEnd = Double.valueOf (loopLength);
+                        internalClip.duration = clip.loopEnd;
+                    }
 
-                case "WAVE":
-                    final Audio audio = convertAudio (dawProject, sourceChunk, sourcePath);
-                    if (audio != null)
-                        internalClip.content = audio;
-                    break;
-
-                default:
-                    // Not supported
-                    this.notifier.log ("IDS_NOTIFY_CLIPTYPE_NOT_SUPPORTED", clipType);
-                    return null;
+                    final Clips clips = new Clips ();
+                    clip.content = clips;
+                    clips.clips.add (internalClip);
+                    return clip;
+                }
             }
 
-            final Clips clips = new Clips ();
-            clip.content = clips;
-            clips.clips.add (internalClip);
-            return clip;
+            return null;
         }
-
-        return null;
+        finally
+        {
+            beatsAndTime.destinationIsBeats = destinationIsBeatsBackup;
+        }
     }
 
 
@@ -1080,24 +1108,22 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param dawProject The dawproject container
      * @param sourceChunk The source chunk which contains the clip data
-     * @param clip The clip which should contain the MIDI events
-     * @param isLooped True if the MIDI clip is looped
+     * @param lanes The lanes where to add the MIDI events
      * @param beatsAndTime The beats and/or time conversion information
-     * @return The created MIDI lanes
+     * @return The end of the MIDI events
      * @throws ParseException Could not parse the notes
      */
-    private static Lanes convertMIDI (final DawProjectContainer dawProject, final Chunk sourceChunk, final Clip clip, final boolean isLooped, final BeatsAndTime beatsAndTime) throws ParseException
+    private static double convertMIDI (final DawProjectContainer dawProject, final Chunk sourceChunk, final Lanes lanes, final BeatsAndTime beatsAndTime) throws ParseException
     {
-        final int ticksPerQuarterNote = readTicksPerQuarterNote (sourceChunk);
-        if (ticksPerQuarterNote == -1)
-            return null;
-
         final Notes notes = new Notes ();
-        final Lanes contentLanes = new Lanes ();
-        contentLanes.lanes.add (notes);
+        lanes.lanes.add (notes);
 
         final Map<ExpressionType, Map<Integer, Map<Integer, Points>>> envelopes = new EnumMap<> (ExpressionType.class);
         final double beatsPerSecond = dawProject.getBeatsPerSecond ();
+
+        final int ticksPerQuarterNote = readTicksPerQuarterNote (sourceChunk);
+        if (ticksPerQuarterNote == -1)
+            return 0;
 
         // Handle all MIDI events
         final List<ReaperMidiEvent> noteStarts = new ArrayList<> ();
@@ -1181,15 +1207,9 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         for (final Map<Integer, Map<Integer, Points>> expEnvelopes: envelopes.values ())
             for (final Map<Integer, Points> envelope: expEnvelopes.values ())
                 for (final Points points: envelope.values ())
-                    contentLanes.lanes.add (points);
+                    lanes.lanes.add (points);
 
-        if (isLooped)
-        {
-            clip.loopStart = Double.valueOf (0);
-            clip.loopEnd = Double.valueOf (handleMIDITime (beatsAndTime, beatsPerSecond, currentPosition / (double) ticksPerQuarterNote));
-        }
-
-        return contentLanes;
+        return handleMIDITime (beatsAndTime, beatsPerSecond, currentPosition / (double) ticksPerQuarterNote);
     }
 
 
@@ -1222,11 +1242,24 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final File sourceFile = new File (sourcePath, filename);
         try
         {
-            final AudioFileFormat audioFileFormat = AudioSystem.getAudioFileFormat (sourceFile);
-            final AudioFormat format = audioFileFormat.getFormat ();
-            audio.channels = format.getChannels ();
-            audio.sampleRate = (int) format.getSampleRate ();
-            audio.duration = getDuration (audioFileFormat);
+            if (sourceFile.getName ().toLowerCase ().endsWith (".ogg"))
+            {
+                try (final VorbisFile vorbisFile = new VorbisFile (new OggFile (new FileInputStream (sourceFile)));)
+                {
+                    final VorbisInfo info = vorbisFile.getInfo ();
+                    audio.channels = info.getChannels ();
+                    audio.sampleRate = info.getSampleRate ();
+                    // TODO audio.duration =
+                }
+            }
+            else
+            {
+                final AudioFileFormat audioFileFormat = AudioSystem.getAudioFileFormat (sourceFile);
+                final AudioFormat format = audioFileFormat.getFormat ();
+                audio.channels = format.getChannels ();
+                audio.sampleRate = (int) format.getSampleRate ();
+                audio.duration = getDuration (audioFileFormat);
+            }
         }
         catch (final UnsupportedAudioFileException | IOException ex)
         {

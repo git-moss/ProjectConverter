@@ -39,8 +39,8 @@ public class VstChunkHandler extends DeviceChunkHandler
     private static final byte [] CONNECTIONS        = { 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0 };
     // @formatter:on
 
-    private boolean              isVST2;
-    private String               deviceID;
+    private final boolean        isVST2;
+    private final String         deviceID;
 
     /** The VST ID. */
     private int                  vstID;
@@ -329,7 +329,7 @@ public class VstChunkHandler extends DeviceChunkHandler
         final List<byte []> chunks = new ArrayList<> ();
 
         final ByteArrayInputStream bais = new ByteArrayInputStream (data);
-        while (bais.available () > 0)
+        while (bais.available () > 8)
         {
             final int length = StreamHelper.readIntLittleEndian (bais);
             bais.skipNBytes (4);

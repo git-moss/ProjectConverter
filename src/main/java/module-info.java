@@ -19,6 +19,8 @@ module de.mossgrabers.projectconverter
 
     requires javafx.graphics;
     requires transitive com.bitwig.dawproject;
+    requires jakarta.xml.bind;
+    requires vorbis.java.core;
 
 
     exports de.mossgrabers.projectconverter;

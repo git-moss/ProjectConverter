@@ -45,7 +45,7 @@ public abstract class DeviceChunkHandler
 
     /**
      * Creates a device chunk from a preset file.
-     * 
+     *
      * @param in Where to read the preset from
      * @param chunk The chunk to create
      * @throws IOException If an error occurs

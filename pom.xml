@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>de.mossgrabers</groupId>
 	<artifactId>projectconverter</artifactId>
-	<version>1.0.0</version>
+	<version>1.1.0</version>
 	<name>ProjectConverter</name>
-	<description>Convert from/to a specific DAW project format to/from generic dawproject</description>
+	<description>Convert from/to a specific DAW project format to/from generic
+		dawproject</description>
 	<organization>
 		<name>Jürgen Moßgraber</name>
 		<url>http://www.mossgrabers.de</url>
@@ -48,6 +51,11 @@
 			<groupId>com.bitwig.open</groupId>
 			<artifactId>dawproject</artifactId>
 			<version>1-SNAPSHOT</version>
+		</dependency>
+		<dependency>
+			<groupId>org.gagravarr</groupId>
+			<artifactId>vorbis-java-core</artifactId>
+			<version>0.8</version>
 		</dependency>
 	</dependencies>
 
@@ -158,7 +166,8 @@
 					<name>${project.name}</name>
 					<appVersion>${project.version}</appVersion>
 					<copyright>(c) 2023 by ${project.organization.name}</copyright>
-					<description>A tool for converting multi-sample from one format to another.</description>
+					<description>A tool for converting multi-sample from one format to
+						another.</description>
 					<vendor>${project.organization.name}</vendor>
 					<licenseFile>LICENSE</licenseFile>
 				</configuration>
@@ -185,7 +194,8 @@
 						<id>linux</id>
 						<configuration>
 							<type>DEB</type>
-							<icon>src/main/resources/de/mossgrabers/projectconverter/images/AppIcon.png</icon>
+							<icon>
+								src/main/resources/de/mossgrabers/projectconverter/images/AppIcon.png</icon>
 						</configuration>
 					</execution>
 				</executions>

@@ -49,7 +49,7 @@ public class Conversions
 
     /**
      * Convert the beats value to time.
-     * 
+     *
      * @param valueInBeatsPerSecond The value in beats
      * @param beatsPerSecond Beats per second
      *

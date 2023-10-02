@@ -22,7 +22,7 @@ public class ClapChunkHandler extends DeviceChunkHandler
     public void chunkToFile (final Chunk chunk, final OutputStream out) throws IOException
     {
         final Optional<Node> stateNode = chunk.getChildNode ("STATE");
-        if (stateNode.isEmpty () || !(stateNode.get () instanceof Chunk stateChunk))
+        if (stateNode.isEmpty () || !(stateNode.get () instanceof final Chunk stateChunk))
             throw new IOException ("IDS_NOTIFY_NO_CLAP_STATE");
 
         for (final Node childNode: stateChunk.getChildNodes ())
