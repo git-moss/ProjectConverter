@@ -107,7 +107,6 @@ Must be named 'Master' when exporting from Bitwig.
    * VST parameter envelopes.
    * MIDI parameter envelopes.
    * Complex routings (beyond normal sends).
-   * Clip comments.
    * Continuous tempo changes.
 
 ## Changes
