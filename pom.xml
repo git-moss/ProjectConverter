@@ -166,8 +166,7 @@
 					<name>${project.name}</name>
 					<appVersion>${project.version}</appVersion>
 					<copyright>(c) 2023 by ${project.organization.name}</copyright>
-					<description>A tool for converting multi-sample from one format to
-						another.</description>
+					<description>A tool for converting multi-sample from one format to another.</description>
 					<vendor>${project.organization.name}</vendor>
 					<licenseFile>LICENSE</licenseFile>
 				</configuration>
@@ -194,8 +193,7 @@
 						<id>linux</id>
 						<configuration>
 							<type>DEB</type>
-							<icon>
-								src/main/resources/de/mossgrabers/projectconverter/images/AppIcon.png</icon>
+							<icon>src/main/resources/de/mossgrabers/projectconverter/images/AppIcon.png</icon>
 						</configuration>
 					</execution>
 				</executions>
