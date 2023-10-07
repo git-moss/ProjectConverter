@@ -111,6 +111,10 @@ Must be named 'Master' when exporting from Bitwig.
 
 ## Changes
 
+### 1.1.1
+
+* Fixed: Workaround for incorrect color format in Studio One exports.
+
 ### 1.1.0
 
 * New: Added more logging and cancelation option when compressing audio files into a DAWproject.

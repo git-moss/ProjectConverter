@@ -364,7 +364,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         addNode (rootChunk, ReaperTags.MASTER_MUTE_SOLO, Integer.toString (state));
 
         if (masterTrack.color != null)
-            addNode (rootChunk, ReaperTags.MASTER_COLOR, Integer.toString (fromHexColor (masterTrack.color)));
+            addNode (rootChunk, ReaperTags.MASTER_COLOR, Integer.toString (this.fromHexColor (masterTrack.color)));
 
         this.convertDevices (mediaFiles, channel.devices, masterTrack.loaded == null || masterTrack.loaded.booleanValue (), rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN);
     }
@@ -603,7 +603,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final Chunk trackChunk = addChunk (rootChunk, ReaperTags.CHUNK_TRACK);
 
         final Track track = trackInfo.track;
-        createTrack (trackChunk, trackInfo.folder == null ? trackInfo.track : trackInfo.folder, trackInfo.type, trackInfo.direction);
+        this.createTrack (trackChunk, trackInfo.folder == null ? trackInfo.track : trackInfo.folder, trackInfo.type, trackInfo.direction);
 
         if (track == null || track.channel == null)
             return;
@@ -931,7 +931,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         for (final Timeline timeline: project.arrangement.lanes.lanes)
         {
             if (timeline instanceof final Markers markers && markers.markers != null)
-                convertMarkers (rootChunk, parameters, markers, sourceIsBeats);
+                this.convertMarkers (rootChunk, parameters, markers, sourceIsBeats);
             else if (timeline instanceof final Lanes lanes && lanes.track != null)
                 this.convertLanes (rootChunk, parameters, null, lanes, project, masterTrack, sourceIsBeats);
         }
@@ -966,14 +966,14 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     }
 
 
-    private static void convertMarkers (final Chunk rootChunk, final Parameters parameters, final Markers markers, final boolean sourceIsBeats)
+    private void convertMarkers (final Chunk rootChunk, final Parameters parameters, final Markers markers, final boolean sourceIsBeats)
     {
         final boolean isBeats = updateIsBeats (markers, sourceIsBeats);
         for (int i = 0; i < markers.markers.size (); i++)
         {
             final Marker marker = markers.markers.get (i);
             final double position = handleTime (marker.time, isBeats, parameters);
-            final int color = marker.color == null ? 0 : fromHexColor (marker.color);
+            final int color = marker.color == null ? 0 : this.fromHexColor (marker.color);
 
             // marker.comment - Marker comment not in Reaper
 
@@ -1132,14 +1132,14 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param type The folder type
      * @param direction The level direction
      */
-    private static void createTrack (final Chunk trackChunk, final Track track, final int type, final int direction)
+    private void createTrack (final Chunk trackChunk, final Track track, final int type, final int direction)
     {
         addNode (trackChunk, ReaperTags.TRACK_NAME, track.name);
         if (track.loaded != null && !track.loaded.booleanValue ())
             addNode (trackChunk, ReaperTags.TRACK_LOCK, "1");
         addNode (trackChunk, ReaperTags.TRACK_STRUCTURE, Integer.toString (type), Integer.toString (direction));
         if (track.color != null)
-            addNode (trackChunk, ReaperTags.TRACK_COLOR, Integer.toString (fromHexColor (track.color)));
+            addNode (trackChunk, ReaperTags.TRACK_COLOR, Integer.toString (this.fromHexColor (track.color)));
     }
 
 
@@ -1310,13 +1310,30 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param hexColor The hex color to parse
      * @return The color
      */
-    private static int fromHexColor (final String hexColor)
+    private int fromHexColor (final String hexColor)
     {
-        final int c = Integer.decode (hexColor).intValue ();
-        final int r = c & 0xFF;
-        final int g = c >> 8 & 0xFF;
-        final int b = c >> 16 & 0xFF;
-        return (r << 16) + (g << 8) + b + 0x01000000;
+        String fixedHexColor = hexColor;
+
+        try
+        {
+            if (hexColor.startsWith ("#"))
+                fixedHexColor = hexColor.substring (1);
+            if (!hexColor.startsWith ("0x"))
+                fixedHexColor = "0x" + fixedHexColor;
+            if (fixedHexColor.length () > 8)
+                fixedHexColor = fixedHexColor.substring (0, 8);
+
+            final int c = Integer.decode (fixedHexColor).intValue ();
+            final int r = c & 0xFF;
+            final int g = c >> 8 & 0xFF;
+            final int b = c >> 16 & 0xFF;
+            return (r << 16) + (g << 8) + b + 0x01000000;
+        }
+        catch (final NumberFormatException | NullPointerException ex)
+        {
+            this.notifier.logError ("IDS_NOTIFY_INVALID_COLOR", hexColor == null ? "null" : hexColor);
+            return 0xCCCCCC;
+        }
     }
 
 
