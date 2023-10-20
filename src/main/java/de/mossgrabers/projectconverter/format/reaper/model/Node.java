@@ -16,7 +16,7 @@ import java.util.List;
 public class Node
 {
     private String             line;
-    private String             name;
+    private String             name       = "";
     private final List<String> parameters = new ArrayList<> ();
 
 

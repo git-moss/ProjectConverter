@@ -94,7 +94,7 @@ public class DawProjectDestinationFormat extends AbstractCoreTask implements IDe
                 return;
 
             final String path = entry.getValue ();
-            this.notifier.log ("IDS_NOTIFY_COMPRESSING_AUDIO_FILE", path);
+            this.notifier.log (path.startsWith ("plugins/") ? "IDS_NOTIFY_COMPRESSING_PRESET_FILE" : "IDS_NOTIFY_COMPRESSING_AUDIO_FILE", path);
             addToZip (zos, path, entry.getKey ());
         }
 

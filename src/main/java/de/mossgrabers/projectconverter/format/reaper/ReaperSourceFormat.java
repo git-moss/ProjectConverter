@@ -83,10 +83,12 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -519,19 +521,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         // Create and store Sends for assignment in second phase
         final List<Node> auxReceive = trackChunk.getChildNodes (ReaperTags.TRACK_AUX_RECEIVE);
-        if (auxReceive.isEmpty ())
-        {
-            // Reaper tracks are always hybrid
-            track.contentType = new ContentType []
-            {
-                ContentType.notes,
-                ContentType.audio
-            };
-
-            // TODO check for group status and set mixer role:
-            // track.mixerRole = MixerRole.subMix;
-        }
-        else
+        if (!auxReceive.isEmpty ())
         {
             for (final Node sendNode: auxReceive)
             {
@@ -578,61 +568,84 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         // Folder handling
         final Optional<Node> structureNode = trackChunk.getChildNode (ReaperTags.TRACK_STRUCTURE);
-        if (structureNode.isEmpty ())
-            return track;
-
-        final int [] structure = getIntParams (structureNode, -1);
-        if (structure.length == 2)
-        {
-            switch (structure[0])
-            {
-                // A top level track or track in a folder
-                default:
-                case 0:
-                    folderStructure.folderTracks.add (track);
-                    break;
-
-                // Folder track
-                case 1:
-                    // Folder tracks are stored as a folder and a master track, which is inside of
-                    // the folder
-                    channel.role = MixerRole.master;
-
-                    final Track folderTrack = new Track ();
-                    folderTrack.contentType = new ContentType []
-                    {
-                        ContentType.tracks
-                    };
-                    folderTrack.name = track.name;
-                    track.name = track.name + " Master";
-                    folderTrack.comment = track.comment;
-                    folderTrack.color = track.color;
-                    folderStructure.folderTracks.add (folderTrack);
-                    folderStructure.folderStack.add (folderStructure.folderTracks);
-                    folderStructure.folderTracks = folderTrack.tracks;
-                    folderStructure.folderTracks.add (track);
-                    break;
-
-                // Last track in the folder
-                case 2:
-                    folderStructure.folderTracks.add (track);
-                    if (folderStructure.folderStack.isEmpty ())
-                        throw new ParseException ("Unsound folder structure.", 0);
-                    for (int i = 0; i < Math.abs (structure[1]); i++)
-                        folderStructure.folderTracks = folderStructure.folderStack.removeLast ();
-                    break;
-            }
-        }
+        if (structureNode.isPresent ())
+            convertFolderStructure (folderStructure, track, channel, getIntParams (structureNode, -1));
 
         final Lanes trackLanes = createTrackLanes (dawProject.getProject (), track, folderStructure);
 
         // Convert all FX devices
         channel.devices = this.convertDevices (dawProject, track, trackChunk, ReaperTags.CHUNK_FXCHAIN, folderStructure);
 
-        this.convertItems (dawProject, trackLanes, trackChunk, sourcePath, beatsAndTime);
+        final Set<ContentType> trackTypes = this.convertItems (dawProject, trackLanes, trackChunk, sourcePath, beatsAndTime);
+
+        if (auxReceive.isEmpty ())
+        {
+            // Reaper tracks are always hybrid but try to set only the necessary type
+            if (trackTypes.isEmpty ())
+            {
+                track.contentType = new ContentType []
+                {
+                    ContentType.notes,
+                    ContentType.audio
+                };
+            }
+            else
+                track.contentType = trackTypes.toArray (new ContentType [trackTypes.size ()]);
+
+            // TODO check for group status and set mixer role:
+            // track.mixerRole = MixerRole.subMix;
+        }
+
         convertAutomation (dawProject, track, trackChunk, folderStructure, beatsAndTime);
 
         return track;
+    }
+
+
+    private static void convertFolderStructure (final FolderStructure folderStructure, final Track track, final Channel channel, final int [] structure)
+    {
+        if (structure.length != 2)
+            return;
+
+        switch (structure[0])
+        {
+            // A top level track or track in a folder
+            default:
+            case 0:
+                folderStructure.folderTracks.add (track);
+                break;
+
+            // Folder track
+            case 1:
+                // Folder tracks are stored as a folder and a master track, which is inside of
+                // the folder
+                channel.role = MixerRole.master;
+
+                final Track folderTrack = new Track ();
+                folderTrack.contentType = new ContentType []
+                {
+                    ContentType.tracks
+                };
+                folderTrack.name = track.name;
+                track.name = track.name + " Master";
+                folderTrack.comment = track.comment;
+                folderTrack.color = track.color;
+                folderStructure.folderTracks.add (folderTrack);
+                folderStructure.folderStack.add (folderStructure.folderTracks);
+                folderStructure.folderTracks = folderTrack.tracks;
+                folderStructure.folderTracks.add (track);
+                break;
+
+            // Last track in the folder
+            case 2:
+                folderStructure.folderTracks.add (track);
+                if (!folderStructure.folderStack.isEmpty ())
+                {
+                    for (int i = 0; i < Math.abs (structure[1]); i++)
+                        folderStructure.folderTracks = folderStructure.folderStack.removeLast ();
+                }
+                break;
+        }
     }
 
 
@@ -967,10 +980,13 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param trackChunk The track chunk
      * @param sourcePath The path of the source project file
      * @param beatsAndTime The beats and/or time conversion information
+     * @return The type of converted clips
      * @throws ParseException Could not parse the track info
      */
-    private void convertItems (final DawProjectContainer dawProject, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
+    private Set<ContentType> convertItems (final DawProjectContainer dawProject, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
     {
+        final Set<ContentType> contentTypes = new HashSet<> ();
+
         final Clips clips = new Clips ();
         trackLanes.lanes.add (clips);
         clips.timeUnit = TimeUnit.beats;
@@ -983,11 +999,13 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
             if (node instanceof final Chunk itemChunk)
             {
-                final Clip clip = this.handleClip (dawProject, itemChunk, sourcePath, beatsAndTime);
+                final Clip clip = this.handleClip (dawProject, itemChunk, sourcePath, beatsAndTime, contentTypes);
                 if (clip != null)
                     clips.clips.add (clip);
             }
         }
+
+        return contentTypes;
     }
 
 
@@ -1008,10 +1026,11 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @param itemChunk The item chunk to parse
      * @param sourcePath The path of the source project file
      * @param beatsAndTime The beats and/or time conversion information
+     * @param contentTypes The content types of the clips
      * @return The clip
      * @throws ParseException Could not parse a clip
      */
-    private Clip handleClip (final DawProjectContainer dawProject, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
+    private Clip handleClip (final DawProjectContainer dawProject, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime, final Set<ContentType> contentTypes) throws ParseException
     {
         final Clip clip = new Clip ();
 
@@ -1055,8 +1074,6 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                     final double offset = handleTime (beatsAndTime, beatsPerSecond, getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_SAMPLE_OFFSET), 0), false);
                     internalClip.time = 0;
                     internalClip.playStart = Double.valueOf (offset);
-                    // internalClip.playStop = Double.valueOf (clip.duration.doubleValue () +
-                    // offset);
                     internalClip.contentTimeUnit = clip.contentTimeUnit;
                     internalClip.duration = clip.duration;
 
@@ -1068,6 +1085,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                             final Lanes lanes = new Lanes ();
                             internalClip.content = lanes;
                             loopLength = convertMIDI (dawProject, sourceChunk, lanes, beatsAndTime);
+                            contentTypes.add (ContentType.notes);
                             break;
 
                         case "WAVE":
@@ -1076,6 +1094,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                                 return null;
                             internalClip.content = audio;
                             loopLength = handleTime (beatsAndTime, beatsPerSecond, audio.duration, false);
+                            contentTypes.add (ContentType.audio);
                             break;
 
                         default:

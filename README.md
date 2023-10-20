@@ -54,7 +54,7 @@ Must be named 'Master' when exporting from Bitwig.
 ### Tracks
 
 * Folder structure
-* Track type - midi and audio, aux if it has receives
+* Track type - MIDI and audio, AUX if it has receives
 * Active state - Reaper has no active state for tracks, instead the track controls are set to locked and all plugins of the track are set to offline.
 * Number of audio channels
 * Volume
@@ -111,13 +111,20 @@ Must be named 'Master' when exporting from Bitwig.
 
 ## Changes
 
+### 1.1.2
+
+* New: Only set DAWproject tracks to hybrid if both audio and MIDI is present.
+* Fixed: Fixed a crash when a Reaper project contained an empty node.
+* Fixed: An error was shown if the last Reaper top track was set as the end of a folder.
+* Fixed: Wrong message was logged when presets were about to be saved.  
+
 ### 1.1.1
 
 * Fixed: Workaround for incorrect color format in Studio One exports.
 
 ### 1.1.0
 
-* New: Added more logging and cancelation option when compressing audio files into a DAWproject.
+* New: Added more logging and cancellation option when compressing audio files into a DAWproject.
 * New: Implemented converting looped audio clips in both directions.
 * New: Added support for OGG files when converting from Reaper.
 * New: Added conversion of clip comments.

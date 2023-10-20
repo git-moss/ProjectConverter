@@ -109,8 +109,11 @@ public class ReaperProject
     {
         final List<String> paramParts = parseLine (line);
         node.setLine (line);
-        node.setName (paramParts.get (0));
-        node.addParameters (paramParts.subList (1, paramParts.size ()));
+        if (!paramParts.isEmpty ())
+        {
+            node.setName (paramParts.get (0));
+            node.addParameters (paramParts.subList (1, paramParts.size ()));
+        }
         return node;
     }
 
