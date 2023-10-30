@@ -111,12 +111,17 @@ Must be named 'Master' when exporting from Bitwig.
 
 ## Changes
 
+### 1.1.3
+
+* Fixed: A DAWproject which did not confirm to the project XML schema could not be converted but only a warning should have been displayed.
+* Fixed: A DAWproject which contained a VST 2 device with an empty (preset) name could not be converted.
+
 ### 1.1.2
 
 * New: Only set DAWproject tracks to hybrid if both audio and MIDI is present.
 * Fixed: Fixed a crash when a Reaper project contained an empty node.
 * Fixed: An error was shown if the last Reaper top track was set as the end of a folder.
-* Fixed: Wrong message was logged when presets were about to be saved.  
+* Fixed: Wrong message was logged when presets were about to be saved.
 
 ### 1.1.1
 

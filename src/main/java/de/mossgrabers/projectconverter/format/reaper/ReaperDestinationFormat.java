@@ -511,7 +511,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             final int vstID = Integer.parseInt (device.deviceID);
             fakeVst3ID.append (intToText (vstID));
             // First 9 lower case characters of the device name
-            String fakeID = fakeVst3ID.append (device.name.toLowerCase (Locale.US)).toString ();
+            String fakeID = fakeVst3ID.append (device.deviceName.toLowerCase (Locale.US)).toString ();
             fakeID = fakeID.substring (0, Math.min (16, fakeID.length ()));
 
             id.append (device.deviceID).append ("<");

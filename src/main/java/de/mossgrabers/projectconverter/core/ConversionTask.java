@@ -79,7 +79,6 @@ public class ConversionTask extends Task<Void>
             catch (final IOException ex)
             {
                 this.notifier.logError ("IDS_NOTIFY_COULD_NOT_VALIDATE_PROJECT", ex);
-                return null;
             }
 
             if (this.waitForDelivery ())
