@@ -57,6 +57,7 @@ import com.bitwig.dawproject.timeline.Warp;
 import com.bitwig.dawproject.timeline.Warps;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -154,17 +155,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
         // Find the master track and handle it separately - this is not stable since it requires the
         // name to be Master
-        Track masterTrack = null;
-        for (final Lane lane: lanes)
-        {
-            if (lane instanceof final Track track && "Master".equals (track.name) && track.channel != null && track.channel.role == MixerRole.master)
-            {
-                lanes.remove (track);
-                masterTrack = track;
-                this.convertMaster (dawProject.getMediaFiles (), track, rootChunk);
-                break;
-            }
-        }
+        final Track masterTrack = findMastertrack (dawProject, rootChunk, lanes);
+        if (masterTrack == null)
+            this.notifier.logError ("IDS_NOTIFY_NO_MASTERTRACK_FOUND");
 
         this.convertTracks (dawProject.getMediaFiles (), lanes, rootChunk, parameters);
 
@@ -180,6 +173,55 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
 
         this.convertArrangementLanes (rootChunk, project, masterTrack, parameters, sourceIsBeats);
         this.saveProject (rootChunk, dawProject, parameters, getOutputPath (dawProject.getName (), outputPath));
+    }
+
+
+    private Track findMastertrack (final DawProjectContainer dawProject, final Chunk rootChunk, final List<Lane> lanes) throws IOException
+    {
+        Track mastertrack = null;
+
+        for (final Lane lane: lanes)
+        {
+            if (lane instanceof final Track track && "Master".equals (track.name) && track.channel != null && track.channel.role == MixerRole.master)
+            {
+                lanes.remove (track);
+                mastertrack = track;
+                break;
+            }
+            else if (lane instanceof final Channel channel && channel.role == MixerRole.master)
+            {
+                lanes.remove (channel);
+                mastertrack = wrapChannelIntoTrack (channel);
+                break;
+            }
+        }
+
+        if (mastertrack != null)
+            this.convertMaster (dawProject.getMediaFiles (), mastertrack, rootChunk);
+
+        // TODO not enough to make it work...
+        // Wrap all other top level channels into a track
+        for (int i = 0; i < lanes.size (); i++)
+        {
+            final Lane lane = lanes.get (i);
+            if (lane instanceof final Channel channel)
+                lanes.set (i, wrapChannelIntoTrack (channel));
+        }
+
+        return mastertrack;
+    }
+
+
+    private static Track wrapChannelIntoTrack (final Channel channel)
+    {
+        final Track track = new Track ();
+        track.channel = channel;
+        track.name = channel.name;
+        track.contentType = new ContentType []
+        {
+            ContentType.audio
+        };
+        return track;
     }
 
 
@@ -223,6 +265,14 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 final Path path = sampleOutputFile.toPath ();
                 this.notifier.log ("IDS_NOTIFY_WRITING_AUDIO_FILE", path.toString ());
                 Files.copy (in, path, StandardCopyOption.REPLACE_EXISTING);
+            }
+            catch (final FileNotFoundException ex)
+            {
+                this.notifier.logError ("IDS_NOTIFY_AUDIO_FILE_NOT_FOUND", audioFile);
+            }
+            catch (final IOException ex)
+            {
+                this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_AUDIO_CHUNK", audioFile);
             }
         }
     }
@@ -500,7 +550,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param mediaFiles Access to additional media files
      * @throws IOException Could not create the VST chunks
      */
-    private static void convertVstDevice (final Device device, final Chunk fxChunk, final IMediaFiles mediaFiles) throws IOException
+    private void convertVstDevice (final Device device, final Chunk fxChunk, final IMediaFiles mediaFiles) throws IOException
     {
         // Create the Reaper device ID for the VST chunk
         final StringBuilder id = new StringBuilder ();
@@ -536,6 +586,14 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         try (final InputStream in = mediaFiles.stream (device.state.path))
         {
             new VstChunkHandler (device instanceof Vst2Plugin, null).fileToChunk (in, vstChunk);
+        }
+        catch (final FileNotFoundException ex)
+        {
+            this.notifier.logError ("IDS_NOTIFY_DEVICE_STATE_FILE_NOT_FOUND", device.state.path);
+        }
+        catch (final IOException ex)
+        {
+            this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_VST_CHUNK", device.state.path);
         }
     }
 
@@ -577,12 +635,20 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param mediaFiles Access to additional media files
      * @throws IOException Could not create the VST chunks
      */
-    private static void convertClapDevice (final ClapPlugin clapPlugin, final Chunk fxChunk, final IMediaFiles mediaFiles) throws IOException
+    private void convertClapDevice (final ClapPlugin clapPlugin, final Chunk fxChunk, final IMediaFiles mediaFiles) throws IOException
     {
         final Chunk clapChunk = addChunk (fxChunk, ReaperTags.CHUNK_CLAP, createDeviceName (clapPlugin), clapPlugin.deviceID, "\"\"");
         try (final InputStream in = mediaFiles.stream (clapPlugin.state.path))
         {
             new ClapChunkHandler ().fileToChunk (in, clapChunk);
+        }
+        catch (final FileNotFoundException ex)
+        {
+            this.notifier.logError ("IDS_NOTIFY_DEVICE_STATE_FILE_NOT_FOUND", clapPlugin.state.path);
+        }
+        catch (final IOException ex)
+        {
+            this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_CLAP_CHUNK", clapPlugin.state.path);
         }
     }
 
@@ -940,7 +1006,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
      * @param rootChunk The root chunk to add the information
      * @param project The project to read from
      * @param masterTrack The master track
-     * @param parameters
+     * @param parameters The parameters
      * @param sourceIsBeats If true the source time base is in beats otherwise seconds
      */
     private void convertArrangementLanes (final Chunk rootChunk, final Project project, final Track masterTrack, final Parameters parameters, final boolean sourceIsBeats)

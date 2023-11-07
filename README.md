@@ -114,7 +114,8 @@ Must be named 'Master' when exporting from Bitwig.
 ### 1.1.4 (unreleased)
 
 * Fixed: Support MIDI clips wrapped in another Lane as exported from Studio One.
-* Fixed: File reference converted from Reaper could contain mixed slashes.
+* Fixed: File reference converted from Reaper could contain mixed slashes (missing audio in Studio One).
+* Fixed: Top level buses are now created as well (Studio One source).
 
 ### 1.1.3
 
