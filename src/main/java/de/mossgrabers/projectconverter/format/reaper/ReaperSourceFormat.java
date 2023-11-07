@@ -1260,7 +1260,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final String filename = waveFileNodeParameters.get (0).replaceAll ("^\"|\"$", "");
         final Audio audio = new Audio ();
         audio.file = new FileReference ();
-        audio.file.path = "samples/" + filename;
+        audio.file.path = "samples/" + filename.replace ('\\', '/');
         audio.algorithm = "raw";
 
         final File sourceFile = new File (sourcePath, filename);

@@ -111,6 +111,11 @@ Must be named 'Master' when exporting from Bitwig.
 
 ## Changes
 
+### 1.1.4 (unreleased)
+
+* Fixed: Support MIDI clips wrapped in another Lane as exported from Studio One.
+* Fixed: File reference converted from Reaper could contain mixed slashes.
+
 ### 1.1.3
 
 * Fixed: A DAWproject which did not confirm to the project XML schema could not be converted but only a warning should have been displayed.

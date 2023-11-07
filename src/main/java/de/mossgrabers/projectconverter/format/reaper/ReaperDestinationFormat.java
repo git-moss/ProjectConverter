@@ -648,82 +648,102 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         if (clips.clips == null)
             return;
 
-        final double parentClipPosition = parentClip.position;
-
+        final boolean isBeats = updateIsBeats (clips, sourceIsBeats);
         for (final Clip clip: clips.clips)
+            this.convertItem (trackChunk, track, clip, parentClip, sourceIsBeats, parameters, isBeats);
+    }
+
+
+    private void convertItem (final Chunk trackChunk, final Track track, final Clip clip, final ParentClip parentClip, final boolean sourceIsBeats, final Parameters parameters, final boolean isBeats)
+    {
+        double duration = getDuration (clip);
+
+        // Cannot group clips in clips in Reaper, therefore only create the most inner clips
+        if (clip.content instanceof final Clips groupedClips)
         {
-            final boolean isBeats = updateIsBeats (clips, sourceIsBeats);
-            double duration = getDuration (clip);
+            parentClip.comment = clip.comment;
+            parentClip.loopStart = clip.loopStart == null ? 0 : clip.loopStart.doubleValue ();
+            parentClip.loopEnd = clip.loopEnd == null ? -1 : clip.loopEnd.doubleValue ();
+            parentClip.position = parentClip.position + clip.time;
+            parentClip.duration = duration;
+            parentClip.offset = clip.playStart == null ? 0 : clip.playStart.doubleValue ();
+            this.convertItems (trackChunk, track, groupedClips, parentClip, isBeats, parameters);
+            return;
+        }
 
-            // Cannot group clips in clips in Reaper, therefore only create the most inner clips
-            if (clip.content instanceof final Clips groupedClips)
+        // Ignore clips outside of the view of the parent clip
+        final double clipTimeEnd = clip.time + duration;
+        if (parentClip.duration != -1 && (clipTimeEnd <= parentClip.offset || clip.time >= parentClip.duration))
+            return;
+
+        // Check if clip start is left to the parents start, if true limit it
+        double start = clip.time;
+        double offset = 0;
+        if (start < parentClip.offset)
+        {
+            final double diff = parentClip.offset - start;
+            duration -= diff;
+            offset = diff;
+            start = 0;
+        }
+        // Limit to maximum duration depending on the surrounding clip
+        if (parentClip.duration != -1 && duration > parentClip.duration)
+            duration = parentClip.duration;
+        start += parentClip.position;
+
+        final Chunk itemChunk = createClipChunk (trackChunk, clip, start, duration, offset, parameters, isBeats);
+
+        if (parentClip.comment != null && !parentClip.comment.isBlank ())
+            createNotesChunk (itemChunk, parentClip.comment, ReaperTags.PROJECT_NOTES);
+
+        if (clip.content instanceof final Notes notes)
+            convertMIDI (itemChunk, parameters, clip, notes, duration, sourceIsBeats);
+        else if (clip.content instanceof final Lanes lanes)
+        {
+            // Cannot create endless nested time lines, handle directly here
+            for (final Timeline trackTimeline: lanes.lanes)
             {
-                parentClip.comment = clip.comment;
-                parentClip.loopStart = clip.loopStart == null ? 0 : clip.loopStart.doubleValue ();
-                parentClip.loopEnd = clip.loopEnd == null ? -1 : clip.loopEnd.doubleValue ();
-                parentClip.position = parentClipPosition + clip.time;
-                parentClip.duration = duration;
-                parentClip.offset = clip.playStart == null ? 0 : clip.playStart.doubleValue ();
-                this.convertItems (trackChunk, track, groupedClips, parentClip, isBeats, parameters);
-                continue;
+                if (trackTimeline instanceof final Notes notes)
+                    convertMIDI (itemChunk, parameters, clip, notes, duration, sourceIsBeats);
+                else if (clip.content instanceof Audio || clip.content instanceof Warps)
+                    convertLoopedAudio (trackChunk, clip, parentClip, sourceIsBeats, parameters, isBeats, duration, start, itemChunk);
+                else
+                    this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", clip.content.getClass ().getName ());
             }
+        }
+        else if (clip.content instanceof Audio || clip.content instanceof Warps)
+            convertLoopedAudio (trackChunk, clip, parentClip, sourceIsBeats, parameters, isBeats, duration, start, itemChunk);
+        else
+            this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", clip.content.getClass ().getName ());
+    }
 
-            // Ignore clips outside of the view of the parent clip
-            final double clipTimeEnd = clip.time + duration;
-            if (parentClip.duration != -1 && (clipTimeEnd <= parentClip.offset || clip.time >= parentClip.duration))
-                continue;
 
-            // Check if clip start is left to the parents start, if true limit it
-            double start = clip.time;
-            double offset = 0;
-            if (start < parentClip.offset)
-            {
-                final double diff = parentClip.offset - start;
-                duration -= diff;
-                offset = diff;
-                start = 0;
-            }
-            // Limit to maximum duration depending on the surrounding clip
-            if (parentClip.duration != -1 && duration > parentClip.duration)
-                duration = parentClip.duration;
-            start += parentClip.position;
+    private static void convertLoopedAudio (final Chunk trackChunk, final Clip clip, final ParentClip parentClip, final boolean sourceIsBeats, final Parameters parameters, final boolean isBeats, final double clipDuration, final double clipStart, final Chunk firstItemChunk)
+    {
+        double start = clipStart;
+        double duration = clipDuration;
+        Chunk itemChunk = firstItemChunk;
 
-            Chunk itemChunk = createClipChunk (trackChunk, clip, start, duration, offset, parameters, isBeats);
-
-            if (parentClip.comment != null && !parentClip.comment.isBlank ())
-                createNotesChunk (itemChunk, parentClip.comment, ReaperTags.PROJECT_NOTES);
-
-            if (clip.content instanceof final Notes notes)
-                convertMIDI (itemChunk, parameters, clip, notes, duration, sourceIsBeats);
-            else if (clip.content instanceof final Lanes lanes)
-                this.convertLanes (itemChunk, parameters, track, lanes, null, null, sourceIsBeats);
-            else if (clip.content instanceof Audio || clip.content instanceof Warps)
-            {
-                // Convert the looped region into individual clips
-                while (true)
-                {
-                    if (clip.content instanceof final Audio audio)
-                        convertAudio (itemChunk, parameters, audio, 1);
-                    else
-                        convertWarps (itemChunk, parameters, (Warps) clip.content, sourceIsBeats);
-
-                    if (parentClip.loopEnd < 0)
-                        break;
-
-                    start += duration;
-                    final double end = parentClip.position + parentClip.duration;
-                    if (start >= end)
-                        break;
-                    duration = parentClip.loopEnd - parentClip.loopStart;
-                    if (start + duration > end)
-                        duration = end - start;
-
-                    offset = parentClip.loopStart;
-                    itemChunk = createClipChunk (trackChunk, clip, start, duration, offset, parameters, isBeats);
-                }
-            }
+        // Convert the looped region into individual clips
+        while (true)
+        {
+            if (clip.content instanceof final Audio audio)
+                convertAudio (itemChunk, parameters, audio, 1);
             else
-                this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", clip.content.getClass ().getName ());
+                convertWarps (itemChunk, parameters, (Warps) clip.content, sourceIsBeats);
+
+            if (parentClip.loopEnd < 0)
+                return;
+
+            start += duration;
+            final double end = parentClip.position + parentClip.duration;
+            if (start >= end)
+                break;
+            duration = parentClip.loopEnd - parentClip.loopStart;
+            if (start + duration > end)
+                duration = end - start;
+
+            itemChunk = createClipChunk (trackChunk, clip, start, duration, parentClip.loopStart, parameters, isBeats);
         }
     }
 
@@ -934,6 +954,8 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 this.convertMarkers (rootChunk, parameters, markers, sourceIsBeats);
             else if (timeline instanceof final Lanes lanes && lanes.track != null)
                 this.convertLanes (rootChunk, parameters, null, lanes, project, masterTrack, sourceIsBeats);
+            else
+                this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_TYPE_IN_LANE", timeline.getClass ().getName ());
         }
 
         createTempoSignatureEnvelope (sourceIsBeats, rootChunk, parameters);
@@ -962,6 +984,8 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 this.convertItems (trackChunk, track, clips, new ParentClip (), isBeats, parameters);
             else if (trackTimeline instanceof final Warps warps)
                 convertWarps (rootOrItemChunk, parameters, warps, sourceIsBeats);
+            else
+                this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_TYPE_IN_LANE", trackTimeline.getClass ().getName ());
         }
     }
 
