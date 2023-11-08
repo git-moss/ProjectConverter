@@ -199,7 +199,6 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         if (mastertrack != null)
             this.convertMaster (dawProject.getMediaFiles (), mastertrack, rootChunk);
 
-        // TODO not enough to make it work...
         // Wrap all other top level channels into a track
         for (int i = 0; i < lanes.size (); i++)
         {
