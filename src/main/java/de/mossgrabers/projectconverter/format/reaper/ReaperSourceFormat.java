@@ -8,6 +8,7 @@ import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.AbstractCoreTask;
 import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.ISourceFormat;
+import de.mossgrabers.projectconverter.core.TimeUtils;
 import de.mossgrabers.projectconverter.format.Conversions;
 import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
 import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
@@ -17,6 +18,8 @@ import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
 import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
 import de.mossgrabers.tools.FileUtils;
+import de.mossgrabers.tools.ui.Functions;
+import de.mossgrabers.tools.ui.panel.BoxPanel;
 
 import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.BoolParameter;
@@ -59,15 +62,17 @@ import com.bitwig.dawproject.timeline.TimeSignaturePoint;
 import com.bitwig.dawproject.timeline.TimeUnit;
 
 import org.gagravarr.ogg.OggFile;
+import org.gagravarr.ogg.audio.OggAudioStatistics;
 import org.gagravarr.vorbis.VorbisFile;
 import org.gagravarr.vorbis.VorbisInfo;
 
+import javafx.geometry.Orientation;
+import javafx.scene.control.Label;
 import javafx.stage.FileChooser.ExtensionFilter;
 
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFileFormat.Type;
 import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioFormat.Encoding;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.UnsupportedAudioFileException;
 
@@ -137,6 +142,18 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
     /** {@inheritDoc} */
     @Override
+    public javafx.scene.Node getEditPane ()
+    {
+        final BoxPanel panel = new BoxPanel (Orientation.VERTICAL);
+        final Label label = panel.createLabel ("@IDS_SELECT_REAPER_PROJECT_FILE");
+        label.setStyle ("-fx-font-style: italic;");
+        panel.addComponent (label);
+        return panel.getPane ();
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
     public DawProjectContainer read (final File sourceFile) throws IOException, ParseException
     {
         final BeatsAndTime beatsAndTime = new BeatsAndTime ();
@@ -150,7 +167,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         final Project project = dawProject.getProject ();
 
-        project.application.name = "Cockos Reaper";
+        project.application.name = "Cockos Reaper (converted with " + Functions.getMessage ("TITLE") + ")";
         final List<String> parameters = rootChunk.getParameters ();
         project.application.version = parameters.size () > 1 ? parameters.get (1) : "Unknown";
 
@@ -158,7 +175,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         convertArrangement (project, rootChunk, beatsAndTime);
         beatsAndTime.destinationIsBeats = false;
-        project.arrangement.lanes.timeUnit = beatsAndTime.destinationIsBeats ? TimeUnit.beats : TimeUnit.seconds;
+        TimeUtils.setTimeUnit (project.arrangement.lanes, beatsAndTime.destinationIsBeats);
 
         final FolderStructure structure = new FolderStructure ();
         structure.folderTracks = new ArrayList<> ();
@@ -989,7 +1006,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         final Clips clips = new Clips ();
         trackLanes.lanes.add (clips);
-        clips.timeUnit = TimeUnit.beats;
+        TimeUtils.setTimeUnit (clips, true);
 
         for (final Node node: trackChunk.getChildNodes ())
         {
@@ -1089,7 +1106,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                             break;
 
                         case "WAVE":
-                            final Audio audio = convertAudio (dawProject, sourceChunk, sourcePath);
+                            final Audio audio = this.convertAudio (dawProject, sourceChunk, sourcePath);
                             if (audio == null)
                                 return null;
                             internalClip.content = audio;
@@ -1246,7 +1263,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      * @return The created Audio clip object
      * @throws ParseException Could not retrieve audio file format
      */
-    private static Audio convertAudio (final DawProjectContainer dawProject, final Chunk sourceChunk, final File sourcePath) throws ParseException
+    private Audio convertAudio (final DawProjectContainer dawProject, final Chunk sourceChunk, final File sourcePath) throws ParseException
     {
         final Optional<Node> waveFileOptional = sourceChunk.getChildNode (ReaperTags.SOURCE_FILE);
         if (waveFileOptional.isEmpty ())
@@ -1273,7 +1290,9 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                     final VorbisInfo info = vorbisFile.getInfo ();
                     audio.channels = info.getChannels ();
                     audio.sampleRate = info.getSampleRate ();
-                    // TODO audio.duration =
+                    final OggAudioStatistics statistics = new OggAudioStatistics (vorbisFile, vorbisFile);
+                    statistics.calculate ();
+                    audio.duration = statistics.getDurationSeconds ();
                 }
             }
             else
@@ -1283,6 +1302,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
                 audio.channels = format.getChannels ();
                 audio.sampleRate = (int) format.getSampleRate ();
                 audio.duration = getDuration (audioFileFormat);
+                if (audio.duration == -1)
+                    this.notifier.logError ("IDS_NOTIFY_NO_AUDIO_FILE_LENGTH", filename);
             }
         }
         catch (final UnsupportedAudioFileException | IOException ex)
@@ -1609,21 +1630,21 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         if (duration != null)
             return duration.longValue () * 1000L * 1000L;
 
-        // ... and because the duration property is optional, use a fallback
+        // ... and because the duration property is mandatory, use a fallback
         // for uncompressed formats like AIFF and WAVE
         final AudioFormat format = audioFileFormat.getFormat ();
-        if (format.getEncoding () == Encoding.PCM_SIGNED
-                // make sure we actually have a frame length
-                && audioFileFormat.getFrameLength () != AudioSystem.NOT_SPECIFIED
-                // make sure we actually have a frame rate
-                && format.getFrameRate () != AudioSystem.NOT_SPECIFIED
-                // check if this is WAVE or AIFF, other uncompressed formats may work as well
-                && (audioFileFormat.getType () == Type.WAVE || audioFileFormat.getType () == Type.AIFF))
+        // Make sure we have a frame length and a frame rate
+        if (audioFileFormat.getFrameLength () != AudioSystem.NOT_SPECIFIED && format.getFrameRate () != AudioSystem.NOT_SPECIFIED)
         {
-            return (long) (audioFileFormat.getFrameLength () / format.getFrameRate ());
+            // Check if this is WAVE or AIFF, other uncompressed formats may work as well
+            final Type type = audioFileFormat.getType ();
+            if (type == Type.WAVE || type == Type.AIFF)
+            {
+                return (long) (audioFileFormat.getFrameLength () / format.getFrameRate ());
+            }
         }
 
-        return 0;
+        return -1;
     }
 
 

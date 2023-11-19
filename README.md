@@ -1,6 +1,22 @@
-# ProjectConverter
+---
+title: The ProjectConverter Manual
+author: 
+- Jürgen Moßgraber
+header-includes:
+    \usepackage{fancyhdr}
+    \pagestyle{fancy}
+geometry: margin=2.5cm
+papersize: a4paper
+date:   \today
+...
 
-Converts from Cockos Reaper projects to the open DAWproject format and back.
+<div style="page-break-after: always; visibility: hidden"> 
+\pagebreak 
+</div>
+
+# Welcome to the ProjectConverter Documentation
+
+This tool converts from Cockos Reaper projects to the open DAWproject format and back.
 
 ## Installation
 
@@ -19,20 +35,28 @@ After that you can start the application ConvertWithMoss.
 3. Press the *Convert* button to start the conversion.
    The progress is shown with notification messages in the log area.
 
-## Conversion Reaper project / dawproject
+## Reaper projects as the destination
+
+This destination format has the option to create an arrangement from the Clip Launcher Data. This puts all clips from the Scenes in the DAWproject in the Arranger. Each scene section has the length of the longest clip in the scene. Additionally, range markers are created for each scene using the name of the scene.
+
+## DAWprojects as the destination
+
+This destination format has the option to create an arrangement from the Clip Launcher Data similar to the Reaper destination (see above). This might be helpful for DAWs which support the DAWproject format but do not have a Clip Launcher (e.g. Presonus Studio One).
+
+## Converted data
 
 The following data can currently be converted between the 2 formats.
 
-### Metadata 
+**Metadata**
 
 * Project comment and author field; other info taken/written from/to export ID3 tags
 
-### Project
+**Project**
 
-* Timebase seconds or beats
+* Time-base seconds or beats
 * Tempo and signature
 
-### Markers
+**Markers**
 
 * Name
 * Position
@@ -40,9 +64,7 @@ The following data can currently be converted between the 2 formats.
 
 Range markers are not supported.
 
-### Master Track
-
-Must be named 'Master' when exporting from Bitwig.
+**Master Track**
 
 * Number of audio channels
 * Volume
@@ -51,7 +73,7 @@ Must be named 'Master' when exporting from Bitwig.
 * Solo
 * Color
 
-### Tracks
+**Tracks**
 
 * Folder structure
 * Track type - MIDI and audio, AUX if it has receives
@@ -63,19 +85,19 @@ Must be named 'Master' when exporting from Bitwig.
 * Solo
 * Color
 
-### Device
+**Device**
 
 * VST 2, VST 3 and CLAP devices with their state
 * Enabled (bypass)
 * Loaded (offline)
 
-### Items
+**Items**
 
 * Name
 * Position
 * Fade in, fade out
 
-### MIDI Items
+**MIDI Items**
 
 * Notes
 * Polyphonic / Channel Aftertouch
@@ -83,11 +105,11 @@ Must be named 'Master' when exporting from Bitwig.
 * Program Change
 * Pitch Bend
 
-### Audio Items
+**Audio Items**
 
 * The sample
 
-### Automation
+**Automation**
 
 * Project tempo
 * Project signature
@@ -97,19 +119,33 @@ Must be named 'Master' when exporting from Bitwig.
 
 ### Known Issues
 
-* No clips in clips in Reaper. Nested clips in a DAWproject are tried to 'flattened', this might have issues.
+* No clips in clips in Reaper: nested clips in a DAWproject are tried to be *flattened*, this might cause issues.
 * Same for fades which are not on the top level. As a workaround consolidate all clips before export.
-* Currently, no support for:
+* Currently, the following features of the DAWproject format are not supported:
    * Built-in devices.
    * AU plugins.
    * Video clips.
-   * Panorama on sends (incl. modulation envelope).
+   * Panorama on sends (including modulation envelope).
    * VST parameter envelopes.
    * MIDI parameter envelopes.
    * Complex routings (beyond normal sends).
    * Continuous tempo changes.
 
+
+<div style="page-break-after: always; visibility: hidden"> 
+\pagebreak 
+</div>
+
 ## Changes
+
+### 1.2.0
+
+* New: DAWproject Clip Launcher clips can be converted into the Reaper arranger.
+* New: DAWproject Clip Launcher clips can be converted into the DAWproject arranger.
+* New: Improved user interface.
+* New: Improved layout of manual.
+* Fixed: WAV files in 32-bit float and OGG-files had a duration of 0 set in the DAWproject target.
+* Fixed: Media files were not added to the destination project when converting DAWproject to DAWproject.
 
 ### 1.1.4
 
@@ -140,6 +176,10 @@ Must be named 'Master' when exporting from Bitwig.
 * New: Added support for OGG files when converting from Reaper.
 * New: Added conversion of clip comments.
 * Fixed: Converting VST3 states from Reaper could crash.
+
+<div style="page-break-after: always; visibility: hidden"> 
+\pagebreak 
+</div>
 
 [1]: https://mossgrabers.de/Software/ProjectConverter/ProjectConverter.html
 [2]: README-MACOS.md

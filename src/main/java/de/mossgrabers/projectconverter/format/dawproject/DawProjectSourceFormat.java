@@ -8,7 +8,10 @@ import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.AbstractCoreTask;
 import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.ISourceFormat;
+import de.mossgrabers.tools.ui.panel.BoxPanel;
 
+import javafx.geometry.Orientation;
+import javafx.scene.control.Label;
 import javafx.stage.FileChooser.ExtensionFilter;
 
 import java.io.File;
@@ -42,6 +45,18 @@ public class DawProjectSourceFormat extends AbstractCoreTask implements ISourceF
     public ExtensionFilter getExtensionFilter ()
     {
         return EXTENSION_FILTER;
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public javafx.scene.Node getEditPane ()
+    {
+        final BoxPanel panel = new BoxPanel (Orientation.VERTICAL);
+        final Label label = panel.createLabel ("@IDS_SELECT_DAWPROJECT_FILE");
+        label.setStyle ("-fx-font-style: italic;");
+        panel.addComponent (label);
+        return panel.getPane ();
     }
 
 

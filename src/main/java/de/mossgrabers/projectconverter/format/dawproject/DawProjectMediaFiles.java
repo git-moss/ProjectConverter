@@ -13,8 +13,11 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Map;
+import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 
 /**
@@ -24,19 +27,34 @@ import java.util.Map;
  */
 public class DawProjectMediaFiles implements IMediaFiles
 {
-    private final File sourceFile;
-    private final File parentPath;
+    private static final String PROJECT_FILE  = "project.xml";
+    private static final String METADATA_FILE = "metadata.xml";
+
+    private final File          sourceFile;
+    private final File          parentPath;
+    private final List<String>  mediaFiles    = new ArrayList<> ();
 
 
     /**
-     * COnstructor.
+     * Constructor.
      *
      * @param sourceFile The dawproject source file
+     * @throws IOException Could not open/read the ZIP source file
      */
-    public DawProjectMediaFiles (final File sourceFile)
+    public DawProjectMediaFiles (final File sourceFile) throws IOException
     {
         this.sourceFile = sourceFile;
         this.parentPath = sourceFile.getParentFile ();
+
+        try (final ZipFile zipFile = new ZipFile (this.sourceFile))
+        {
+            for (final ZipEntry zipEntry: Collections.list (zipFile.entries ()))
+            {
+                final String name = zipEntry.getName ();
+                if (!PROJECT_FILE.equals (name) && !METADATA_FILE.equals (name))
+                    this.mediaFiles.add (name);
+            }
+        }
     }
 
 
@@ -70,9 +88,8 @@ public class DawProjectMediaFiles implements IMediaFiles
 
     /** {@inheritDoc} */
     @Override
-    public Map<String, File> getAll ()
+    public List<String> getAll ()
     {
-        // Not used
-        return Collections.emptyMap ();
+        return this.mediaFiles;
     }
 }

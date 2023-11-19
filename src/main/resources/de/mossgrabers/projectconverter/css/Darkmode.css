@@ -22,12 +22,6 @@
     -fx-prompt-text-fill: gray;
 }
 
-/*
-.titulo {
-    -fx-font-weight: bold;
-    -fx-font-size: 18px;
-}*/
-
 .button {
     -fx-focus-traversable: false;
 }
@@ -50,6 +44,11 @@
 .button:default {
     -fx-base: -fx-accent ;
 } 
+
+.horizontal-tab-pane *.tab:selected {
+	-fx-background-color: rgb(45, 45, 46);
+	-fx-border-color: rgb(75, 125, 200) black rgb(45, 45, 46) black;
+}
 
 .table-view {
     -fx-selection-bar-non-focused: derive(-fx-base, 50%);

@@ -28,8 +28,11 @@ import javafx.application.Platform;
 import javafx.collections.ObservableList;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
+import javafx.geometry.Side;
+import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
@@ -98,7 +101,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
      */
     public ProjectConverterApp () throws EndApplicationException
     {
-        super ("de/mossgrabers/projectconverter", 800, 600);
+        super ("de/mossgrabers/projectconverter", 1100, 500);
 
         this.sourceFormats = new ISourceFormat []
         {
@@ -125,22 +128,23 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     {
         super.initialise (stage, baseTitleOptional, true, true, true);
 
+        ////////////////////////////////////////////////////////////////////
         // The main button panel
+        ////////////////////////////////////////////////////////////////////
+
         final ButtonPanel buttonPanel = new ButtonPanel (Orientation.VERTICAL);
         this.convertButton = setupButton (buttonPanel, "Convert", "@IDS_MAIN_CONVERT");
         this.convertButton.setOnAction (event -> this.execute ());
         this.cancelButton = setupButton (buttonPanel, "Cancel", "@IDS_MAIN_CANCEL");
         this.cancelButton.setOnAction (event -> this.cancelExecution ());
 
-        final ButtonPanel optionsPanel = new ButtonPanel (Orientation.VERTICAL);
-        this.enableDarkMode = optionsPanel.createCheckBox ("@IDS_MAIN_ENABLE_DARK_MODE", "@IDS_MAIN_ENABLE_DARK_MODE_TOOLTIP");
-        this.enableDarkMode.selectedProperty ().addListener ( (obs, wasSelected, isSelected) -> this.setDarkMode (isSelected.booleanValue ()));
-
         final BorderPane buttonPane = new BorderPane ();
         buttonPane.setTop (buttonPanel.getPane ());
-        buttonPane.setBottom (optionsPanel.getPane ());
 
+        ////////////////////////////////////////////////////////////////////
         // Source pane
+        ////////////////////////////////////////////////////////////////////
+
         final BorderPane sourcePane = new BorderPane ();
 
         this.sourceFileField = new TextField ();
@@ -166,8 +170,12 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
             tab.setClosable (false);
             tabs.add (tab);
         }
+        setTabPaneLeftTabsHorizontal (this.sourceTabPane);
 
+        ////////////////////////////////////////////////////////////////////
         // Destination pane
+        ////////////////////////////////////////////////////////////////////
+
         final BorderPane destinationPane = new BorderPane ();
 
         this.destinationPathField = new TextField ();
@@ -193,22 +201,35 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
             tab.setClosable (false);
             destinationTabs.add (tab);
         }
+        setTabPaneLeftTabsHorizontal (this.destinationTabPane);
 
+        ////////////////////////////////////////////////////////////////////
         // Tie it all together ...
+        ////////////////////////////////////////////////////////////////////
+
         final HBox grid = new HBox ();
         grid.setFillHeight (true);
         grid.getChildren ().addAll (sourcePane, destinationPane);
         HBox.setHgrow (sourcePane, Priority.ALWAYS);
         HBox.setHgrow (destinationPane, Priority.ALWAYS);
+        sourcePane.setMaxWidth (Double.MAX_VALUE);
+        destinationPane.setMaxWidth (Double.MAX_VALUE);
+
+        final BorderPane topPane = new BorderPane ();
+        topPane.setCenter (grid);
+        topPane.setRight (buttonPane);
+
+        final ButtonPanel optionsPanel = new ButtonPanel (Orientation.HORIZONTAL);
+        this.enableDarkMode = optionsPanel.createCheckBox ("@IDS_MAIN_ENABLE_DARK_MODE", "@IDS_MAIN_ENABLE_DARK_MODE_TOOLTIP");
+        this.enableDarkMode.selectedProperty ().addListener ( (obs, wasSelected, isSelected) -> this.setDarkMode (isSelected.booleanValue ()));
 
         final BorderPane mainPane = new BorderPane ();
-        mainPane.setTop (grid);
-        mainPane.setRight (buttonPane);
+        mainPane.setTop (topPane);
         final WebView webView = this.loggingArea.getWebView ();
         final StackPane stackPane = new StackPane (webView);
         stackPane.getStyleClass ().add ("padding");
-
         mainPane.setCenter (stackPane);
+        mainPane.setBottom (optionsPanel.getPane ());
 
         this.setCenterNode (mainPane);
 
@@ -488,5 +509,34 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         button.alignmentProperty ().set (Pos.CENTER_LEFT);
         button.graphicTextGapProperty ().set (12);
         return button;
+    }
+
+
+    private static void setTabPaneLeftTabsHorizontal (final TabPane tabPane)
+    {
+        tabPane.setSide (Side.LEFT);
+        tabPane.setRotateGraphic (true);
+        tabPane.setTabMinHeight (80); // Determines tab width. I know, its odd.
+        tabPane.setTabMaxHeight (200);
+        tabPane.getStyleClass ().add ("horizontal-tab-pane");
+
+        for (final Tab tab: tabPane.getTabs ())
+        {
+            final Label l = new Label ("xxxx");
+            l.setVisible (false);
+            l.setMaxHeight (0);
+            l.setPrefHeight (0);
+            tab.setGraphic (l);
+
+            Platform.runLater ( () -> {
+                // Get the "tab-container" node. This is what we want to rotate/shift for easy
+                // left-alignment.
+                final Parent tabContainer = tab.getGraphic ().getParent ().getParent ();
+                tabContainer.setRotate (90);
+                // By default the display will originate from the center. Applying a negative Y
+                // transformation will move it left. Should be the 'TabMinHeight/2'
+                tabContainer.setTranslateY (-60);
+            });
+        }
     }
 }

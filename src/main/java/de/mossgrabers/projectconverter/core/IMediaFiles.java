@@ -7,7 +7,7 @@ package de.mossgrabers.projectconverter.core;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Map;
+import java.util.List;
 
 
 /**
@@ -38,9 +38,9 @@ public interface IMediaFiles
 
 
     /**
-     * Get all media files.
+     * Get the IDs of all media files.
      *
      * @return All media files
      */
-    Map<String, File> getAll ();
+    List<String> getAll ();
 }

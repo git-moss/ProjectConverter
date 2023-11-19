@@ -10,7 +10,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 
@@ -42,8 +44,8 @@ public class ReaperMediaFiles implements IMediaFiles
 
     /** {@inheritDoc} */
     @Override
-    public Map<String, File> getAll ()
+    public List<String> getAll ()
     {
-        return this.mediaFiles;
+        return new ArrayList<> (this.mediaFiles.keySet ());
     }
 }
