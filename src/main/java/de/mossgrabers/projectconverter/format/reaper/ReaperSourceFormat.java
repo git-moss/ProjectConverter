@@ -4,22 +4,38 @@
 
 package de.mossgrabers.projectconverter.format.reaper;
 
-import de.mossgrabers.projectconverter.INotifier;
-import de.mossgrabers.projectconverter.core.AbstractCoreTask;
-import de.mossgrabers.projectconverter.core.DawProjectContainer;
-import de.mossgrabers.projectconverter.core.ISourceFormat;
-import de.mossgrabers.projectconverter.core.TimeUtils;
-import de.mossgrabers.projectconverter.format.Conversions;
-import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
-import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
-import de.mossgrabers.projectconverter.format.reaper.model.DeviceChunkHandler;
-import de.mossgrabers.projectconverter.format.reaper.model.Node;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
-import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
-import de.mossgrabers.tools.FileUtils;
-import de.mossgrabers.tools.ui.Functions;
-import de.mossgrabers.tools.ui.panel.BoxPanel;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.sound.sampled.AudioFileFormat;
+import javax.sound.sampled.AudioFileFormat.Type;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.UnsupportedAudioFileException;
+
+import org.gagravarr.ogg.OggFile;
+import org.gagravarr.ogg.audio.OggAudioStatistics;
+import org.gagravarr.vorbis.VorbisFile;
+import org.gagravarr.vorbis.VorbisInfo;
 
 import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.BoolParameter;
@@ -61,42 +77,26 @@ import com.bitwig.dawproject.timeline.RealPoint;
 import com.bitwig.dawproject.timeline.TimeSignaturePoint;
 import com.bitwig.dawproject.timeline.TimeUnit;
 
-import org.gagravarr.ogg.OggFile;
-import org.gagravarr.ogg.audio.OggAudioStatistics;
-import org.gagravarr.vorbis.VorbisFile;
-import org.gagravarr.vorbis.VorbisInfo;
-
+import de.mossgrabers.projectconverter.INotifier;
+import de.mossgrabers.projectconverter.core.AbstractCoreTask;
+import de.mossgrabers.projectconverter.core.DawProjectContainer;
+import de.mossgrabers.projectconverter.core.ISourceFormat;
+import de.mossgrabers.projectconverter.core.TimeUtils;
+import de.mossgrabers.projectconverter.format.Conversions;
+import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
+import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
+import de.mossgrabers.projectconverter.format.reaper.model.DeviceChunkHandler;
+import de.mossgrabers.projectconverter.format.reaper.model.Node;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
+import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
+import de.mossgrabers.tools.FileUtils;
+import de.mossgrabers.tools.ui.BasicConfig;
+import de.mossgrabers.tools.ui.Functions;
+import de.mossgrabers.tools.ui.panel.BoxPanel;
 import javafx.geometry.Orientation;
-import javafx.scene.control.Label;
+import javafx.scene.control.CheckBox;
 import javafx.stage.FileChooser.ExtensionFilter;
-
-import javax.sound.sampled.AudioFileFormat;
-import javax.sound.sampled.AudioFileFormat.Type;
-import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.UnsupportedAudioFileException;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.text.ParseException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Deque;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 
 /**
@@ -107,10 +107,11 @@ import java.util.regex.Pattern;
  */
 public class ReaperSourceFormat extends AbstractCoreTask implements ISourceFormat
 {
-    private static final Pattern         PATTERN_DEVICE_DESCRIPTION = Pattern.compile ("(VST|VSTi|VST3|VST3i|CLAP|CLAPi)?:\\s(.*)(\\s\\((.*)\\))?");
-    private static final Pattern         PATTERN_VST2_ID            = Pattern.compile ("(.*)<.*");
-    private static final Pattern         PATTERN_VST3_ID            = Pattern.compile (".*\\{(.*)\\}");
-    private static final ExtensionFilter EXTENSION_FILTER           = new ExtensionFilter ("Reaper Project", "*.rpp", "*.rpp-bak");
+    private static final Pattern         PATTERN_DEVICE_DESCRIPTION  = Pattern.compile ("(VST|VSTi|VST3|VST3i|CLAP|CLAPi)?:\\s(.*)(\\s\\((.*)\\))?");
+    private static final Pattern         PATTERN_VST2_ID             = Pattern.compile ("(.*)<.*");
+    private static final Pattern         PATTERN_VST3_ID             = Pattern.compile (".*\\{(.*)\\}");
+    private static final ExtensionFilter EXTENSION_FILTER            = new ExtensionFilter ("Reaper Project", "*.rpp", "*.rpp-bak");
+    private static final String          DO_NOT_COMPRESS_AUDIO_FILES = "DO_NOT_COMPRESS_AUDIO_FILES";
 
 
     private enum MidiBytes
@@ -119,6 +120,9 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         TWO,
         BOTH
     }
+
+
+    private CheckBox doNotCompressAudioFiles;
 
 
     /**
@@ -145,10 +149,24 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
     public javafx.scene.Node getEditPane ()
     {
         final BoxPanel panel = new BoxPanel (Orientation.VERTICAL);
-        final Label label = panel.createLabel ("@IDS_SELECT_REAPER_PROJECT_FILE");
-        label.setStyle ("-fx-font-style: italic;");
-        panel.addComponent (label);
+        this.doNotCompressAudioFiles = panel.createCheckBox ("@IDS_DO_NOT_COMPRESS_AUDIO_FILES");
         return panel.getPane ();
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void loadSettings (final BasicConfig config)
+    {
+        this.doNotCompressAudioFiles.setSelected (config.getBoolean (DO_NOT_COMPRESS_AUDIO_FILES));
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void saveSettings (final BasicConfig config)
+    {
+        config.setBoolean (DO_NOT_COMPRESS_AUDIO_FILES, this.doNotCompressAudioFiles.isSelected ());
     }
 
 
@@ -1274,44 +1292,62 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         if (waveFileNodeParameters.isEmpty ())
             return null;
 
-        final String filename = waveFileNodeParameters.get (0).replaceAll ("^\"|\"$", "");
+        final String filePathName = waveFileNodeParameters.get (0).replaceAll ("^\"|\"$", "").replace ('\\', '/');
+        final File filePath = new File (filePathName);
+        final boolean isAbsolute = filePath.isAbsolute ();
+        final boolean noCompression = this.doNotCompressAudioFiles.isSelected ();
+        final String filename = isAbsolute ? filePath.getName () : filePathName;
+
         final Audio audio = new Audio ();
         audio.file = new FileReference ();
-        audio.file.path = "samples/" + filename.replace ('\\', '/');
+        audio.file.path = noCompression ? filePathName : "samples/" + filename;
+        if (noCompression)
+            audio.file.external = Boolean.valueOf (noCompression);
         audio.algorithm = "raw";
 
-        final File sourceFile = new File (sourcePath, filename);
-        try
+        final File sourceFile = isAbsolute ? filePath : new File (sourcePath, filePathName);
+        if (!sourceFile.exists ())
         {
-            if (sourceFile.getName ().toLowerCase ().endsWith (".ogg"))
+            this.notifier.logError ("IDS_NOTIFY_AUDIO_FILE_NOT_FOUND", sourceFile.getAbsolutePath ());
+
+            // Do not crash since the rest of the project file might still be useful
+        }
+        else
+        {
+            try
             {
-                try (final VorbisFile vorbisFile = new VorbisFile (new OggFile (new FileInputStream (sourceFile)));)
+                if (sourceFile.getName ().toLowerCase ().endsWith (".ogg"))
                 {
-                    final VorbisInfo info = vorbisFile.getInfo ();
-                    audio.channels = info.getChannels ();
-                    audio.sampleRate = info.getSampleRate ();
-                    final OggAudioStatistics statistics = new OggAudioStatistics (vorbisFile, vorbisFile);
-                    statistics.calculate ();
-                    audio.duration = statistics.getDurationSeconds ();
+                    try (final VorbisFile vorbisFile = new VorbisFile (new OggFile (new FileInputStream (sourceFile)));)
+                    {
+                        final VorbisInfo info = vorbisFile.getInfo ();
+                        audio.channels = info.getChannels ();
+                        audio.sampleRate = info.getSampleRate ();
+                        final OggAudioStatistics statistics = new OggAudioStatistics (vorbisFile, vorbisFile);
+                        statistics.calculate ();
+                        audio.duration = statistics.getDurationSeconds ();
+                    }
+                }
+                else
+                {
+                    final AudioFileFormat audioFileFormat = AudioSystem.getAudioFileFormat (sourceFile);
+                    final AudioFormat format = audioFileFormat.getFormat ();
+                    audio.channels = format.getChannels ();
+                    audio.sampleRate = (int) format.getSampleRate ();
+                    audio.duration = getDuration (audioFileFormat);
+                    if (audio.duration == -1)
+                        this.notifier.logError ("IDS_NOTIFY_NO_AUDIO_FILE_LENGTH", filename);
                 }
             }
-            else
+            catch (final UnsupportedAudioFileException | IOException ex)
             {
-                final AudioFileFormat audioFileFormat = AudioSystem.getAudioFileFormat (sourceFile);
-                final AudioFormat format = audioFileFormat.getFormat ();
-                audio.channels = format.getChannels ();
-                audio.sampleRate = (int) format.getSampleRate ();
-                audio.duration = getDuration (audioFileFormat);
-                if (audio.duration == -1)
-                    this.notifier.logError ("IDS_NOTIFY_NO_AUDIO_FILE_LENGTH", filename);
+                throw new ParseException ("Could not retrieve audio file format: " + sourceFile.getAbsolutePath (), 0);
             }
-        }
-        catch (final UnsupportedAudioFileException | IOException ex)
-        {
-            throw new ParseException ("Could not retrieve audio file format: " + sourceFile.getAbsolutePath (), 0);
+
+            if (!noCompression)
+                ((ReaperMediaFiles) dawProject.getMediaFiles ()).add (audio.file.path, sourceFile);
         }
 
-        ((ReaperMediaFiles) dawProject.getMediaFiles ()).add (audio.file.path, sourceFile);
         return audio;
     }
 

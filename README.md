@@ -35,13 +35,15 @@ After that you can start the application ConvertWithMoss.
 3. Press the *Convert* button to start the conversion.
    The progress is shown with notification messages in the log area.
 
-## Reaper projects as the destination
+## Reaper project as the destination
 
 This destination format has the option to create an arrangement from the Clip Launcher Data. This puts all clips from the Scenes in the DAWproject in the Arranger. Each scene section has the length of the longest clip in the scene. Additionally, range markers are created for each scene using the name of the scene.
 
-## DAWprojects as the destination
+## DAWproject as the destination
 
 This destination format has the option to create an arrangement from the Clip Launcher Data similar to the Reaper destination (see above). This might be helpful for DAWs which support the DAWproject format but do not have a Clip Launcher (e.g. Presonus Studio One).
+
+The Reaper source has an option to not add audio files to the DAWproject file and keep their original (relative or absolute) file paths.
 
 ## Converted data
 
@@ -137,6 +139,11 @@ Range markers are not supported.
 </div>
 
 ## Changes
+
+### 1.2.1
+
+* New: Added option on Reaper source to not add audio files to the DAWproject file and keep their original (relative or absolute) file path.
+* New: Do not stop DAWproject file creation if an audio file is missing.
 
 ### 1.2.0
 
