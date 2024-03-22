@@ -35,17 +35,17 @@
 		<dependency>
 			<groupId>org.openjfx</groupId>
 			<artifactId>javafx-controls</artifactId>
-			<version>21.0.1</version>
+			<version>22</version>
 		</dependency>
 		<dependency>
 			<groupId>org.openjfx</groupId>
 			<artifactId>javafx-web</artifactId>
-			<version>21.0.1</version>
+			<version>22</version>
 		</dependency>
 		<dependency>
 			<artifactId>uitools</artifactId>
 			<groupId>de.mossgrabers</groupId>
-			<version>1.3.4</version>
+			<version>1.4.0</version>
 		</dependency>
 		<dependency>
 			<groupId>com.bitwig.open</groupId>
@@ -88,7 +88,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.11.0</version>
+				<version>3.13.0</version>
 				<configuration>
 					<fork>true</fork>
 					<source>17</source>
@@ -156,7 +156,7 @@
 			<plugin>
 				<groupId>org.panteleyev</groupId>
 				<artifactId>jpackage-maven-plugin</artifactId>
-				<version>1.6.0</version>
+				<version>1.6.3</version>
 				<configuration>
 					<input>target/lib</input>
 					<destination>target/release</destination>
@@ -164,7 +164,7 @@
 					<mainClass>${main.class}</mainClass>
 					<name>${project.name}</name>
 					<appVersion>${project.version}</appVersion>
-					<copyright>(c) 2023 by ${project.organization.name}</copyright>
+					<copyright>(c) 2023-2024 by ${project.organization.name}</copyright>
 					<description>A tool for converting multi-sample from one format to another.</description>
 					<vendor>${project.organization.name}</vendor>
 					<licenseFile>LICENSE</licenseFile>
@@ -238,7 +238,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>3.2.2</version>
+				<version>3.2.5</version>
 			</plugin>
 
 		</plugins>

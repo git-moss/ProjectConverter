@@ -1095,6 +1095,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
             if (fadeOutParams.length > 1 && fadeOutParams[1] > 0)
                 clip.fadeOutTime = Double.valueOf (handleTime (beatsAndTime, beatsPerSecond, fadeOutParams[1], false));
 
+            // TODO support the PLAYRATE of ITEM (at least on Audio)
+
             final Optional<Node> source = itemChunk.getChildNode (ReaperTags.CHUNK_ITEM_SOURCE);
             if (source.isPresent ())
             {
@@ -1308,47 +1310,50 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         final File sourceFile = isAbsolute ? filePath : new File (sourcePath, filePathName);
         if (!sourceFile.exists ())
         {
-            this.notifier.logError ("IDS_NOTIFY_AUDIO_FILE_NOT_FOUND", sourceFile.getAbsolutePath ());
-
             // Do not crash since the rest of the project file might still be useful
+            this.notifier.logError ("IDS_NOTIFY_AUDIO_FILE_NOT_FOUND", sourceFile.getAbsolutePath ());
         }
         else
         {
-            try
-            {
-                if (sourceFile.getName ().toLowerCase ().endsWith (".ogg"))
-                {
-                    try (final VorbisFile vorbisFile = new VorbisFile (new OggFile (new FileInputStream (sourceFile)));)
-                    {
-                        final VorbisInfo info = vorbisFile.getInfo ();
-                        audio.channels = info.getChannels ();
-                        audio.sampleRate = info.getSampleRate ();
-                        final OggAudioStatistics statistics = new OggAudioStatistics (vorbisFile, vorbisFile);
-                        statistics.calculate ();
-                        audio.duration = statistics.getDurationSeconds ();
-                    }
-                }
-                else
-                {
-                    final AudioFileFormat audioFileFormat = AudioSystem.getAudioFileFormat (sourceFile);
-                    final AudioFormat format = audioFileFormat.getFormat ();
-                    audio.channels = format.getChannels ();
-                    audio.sampleRate = (int) format.getSampleRate ();
-                    audio.duration = getDuration (audioFileFormat);
-                    if (audio.duration == -1)
-                        this.notifier.logError ("IDS_NOTIFY_NO_AUDIO_FILE_LENGTH", filename);
-                }
-            }
-            catch (final UnsupportedAudioFileException | IOException ex)
-            {
-                throw new ParseException ("Could not retrieve audio file format: " + sourceFile.getAbsolutePath (), 0);
-            }
-
+            this.setAudioAttributes (filename, audio, sourceFile);
             if (!noCompression)
                 ((ReaperMediaFiles) dawProject.getMediaFiles ()).add (audio.file.path, sourceFile);
         }
 
         return audio;
+    }
+
+
+    private void setAudioAttributes (final String filename, final Audio audio, final File sourceFile) throws ParseException
+    {
+        try
+        {
+            if (sourceFile.getName ().toLowerCase ().endsWith (".ogg"))
+            {
+                try (final VorbisFile vorbisFile = new VorbisFile (new OggFile (new FileInputStream (sourceFile)));)
+                {
+                    final VorbisInfo info = vorbisFile.getInfo ();
+                    audio.channels = info.getChannels ();
+                    audio.sampleRate = info.getSampleRate ();
+                    final OggAudioStatistics statistics = new OggAudioStatistics (vorbisFile, vorbisFile);
+                    statistics.calculate ();
+                    audio.duration = statistics.getDurationSeconds ();
+                }
+                return;
+            }
+
+            final AudioFileFormat audioFileFormat = AudioSystem.getAudioFileFormat (sourceFile);
+            final AudioFormat format = audioFileFormat.getFormat ();
+            audio.channels = format.getChannels ();
+            audio.sampleRate = (int) format.getSampleRate ();
+            audio.duration = getDuration (audioFileFormat);
+            if (audio.duration == -1)
+                this.notifier.logError ("IDS_NOTIFY_NO_AUDIO_FILE_LENGTH", filename);
+        }
+        catch (final UnsupportedAudioFileException | IOException ex)
+        {
+            throw new ParseException ("Could not retrieve audio file format: " + sourceFile.getAbsolutePath (), 0);
+        }
     }
 
 

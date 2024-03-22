@@ -4,21 +4,28 @@
 
 package de.mossgrabers.projectconverter.format.reaper;
 
-import de.mossgrabers.projectconverter.INotifier;
-import de.mossgrabers.projectconverter.core.AbstractCoreTask;
-import de.mossgrabers.projectconverter.core.DawProjectContainer;
-import de.mossgrabers.projectconverter.core.IDestinationFormat;
-import de.mossgrabers.projectconverter.core.IMediaFiles;
-import de.mossgrabers.projectconverter.core.TimeUtils;
-import de.mossgrabers.projectconverter.format.Conversions;
-import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
-import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
-import de.mossgrabers.projectconverter.format.reaper.model.Node;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
-import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
-import de.mossgrabers.tools.ui.BasicConfig;
-import de.mossgrabers.tools.ui.panel.BoxPanel;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.UUID;
 
 import com.bitwig.dawproject.Channel;
 import com.bitwig.dawproject.ContentType;
@@ -59,34 +66,26 @@ import com.bitwig.dawproject.timeline.Timeline;
 import com.bitwig.dawproject.timeline.Warp;
 import com.bitwig.dawproject.timeline.Warps;
 
+import de.mossgrabers.projectconverter.INotifier;
+import de.mossgrabers.projectconverter.core.AbstractCoreTask;
+import de.mossgrabers.projectconverter.core.DawProjectContainer;
+import de.mossgrabers.projectconverter.core.IDestinationFormat;
+import de.mossgrabers.projectconverter.core.IMediaFiles;
+import de.mossgrabers.projectconverter.core.TimeUtils;
+import de.mossgrabers.projectconverter.format.Conversions;
+import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
+import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
+import de.mossgrabers.projectconverter.format.reaper.model.Node;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
+import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
+import de.mossgrabers.tools.ui.BasicConfig;
+import de.mossgrabers.tools.ui.panel.BoxPanel;
 import javafx.collections.ObservableList;
 import javafx.geometry.Orientation;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleGroup;
-
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.UUID;
 
 
 /**
@@ -954,10 +953,13 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final File sourceFile = new File (audio.file.path);
         parameters.audioFiles.add (audio.file.path);
 
+        // TODO support pitch
+        // TODO support audio.algorithm
+
         // field 1, float, play rate
         // field 2, integer (boolean), preserve pitch while changing rate
         // field 3, float, pitch adjust, in semitones.cents
-        // field 4, integer, pitch shifting/time stretch mode and preset: -1 - project default
+        // field 4, integer, pitch shifting/time stretch mode and preset: -1 is project default
         addNode (itemChunk, ReaperTags.ITEM_PLAYRATE, String.format ("%.6f", Double.valueOf (playRate)), "1", "0.000", "-1");
 
         final Chunk sourceChunk = addChunk (itemChunk, ReaperTags.CHUNK_ITEM_SOURCE, "WAVE");
