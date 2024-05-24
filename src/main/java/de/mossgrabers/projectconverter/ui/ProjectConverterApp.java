@@ -4,6 +4,12 @@
 
 package de.mossgrabers.projectconverter.ui;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.ConversionTask;
 import de.mossgrabers.projectconverter.core.IDestinationFormat;
@@ -22,7 +28,6 @@ import de.mossgrabers.tools.ui.control.TitledSeparator;
 import de.mossgrabers.tools.ui.panel.BasePanel;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
 import de.mossgrabers.tools.ui.panel.ButtonPanel;
-
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
@@ -36,6 +41,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
+import javafx.scene.effect.BlendMode;
 import javafx.scene.image.Image;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -44,11 +50,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
-
-import java.io.File;
-import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 
 /**
@@ -412,11 +413,16 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     {
         final ObservableList<String> stylesheets = this.scene.getStylesheets ();
         final String stylesheet = this.startPath + "/css/Darkmode.css";
-        this.loggingArea.setDarkmode (isSelected);
         if (isSelected)
+        {
             stylesheets.add (stylesheet);
+            this.loggingArea.getWebView ().setBlendMode (BlendMode.OVERLAY);
+        }
         else
+        {
             stylesheets.remove (stylesheet);
+            this.loggingArea.getWebView ().setBlendMode (BlendMode.DARKEN);
+        }
     }
 
 
@@ -502,9 +508,17 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     }
 
 
-    private static Button setupButton (final BasePanel panel, final String iconName, final String labelName)
+    private static Button setupButton (final BasePanel panel, final String iconName, final String labelName) throws EndApplicationException
     {
-        final Image icon = Functions.iconFor ("de/mossgrabers/projectconverter/images/" + iconName + ".png");
+        Image icon;
+        try
+        {
+            icon = Functions.iconFor ("de/mossgrabers/projectconverter/images/" + iconName + ".png");
+        }
+        catch (final IOException ex)
+        {
+            throw new EndApplicationException (ex);
+        }
         final Button button = panel.createButton (icon, labelName);
         button.alignmentProperty ().set (Pos.CENTER_LEFT);
         button.graphicTextGapProperty ().set (12);
