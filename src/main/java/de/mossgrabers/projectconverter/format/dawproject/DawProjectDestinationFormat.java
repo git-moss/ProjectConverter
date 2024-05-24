@@ -4,17 +4,18 @@
 
 package de.mossgrabers.projectconverter.format.dawproject;
 
-import de.mossgrabers.projectconverter.INotifier;
-import de.mossgrabers.projectconverter.core.AbstractCoreTask;
-import de.mossgrabers.projectconverter.core.DawProjectContainer;
-import de.mossgrabers.projectconverter.core.IDestinationFormat;
-import de.mossgrabers.projectconverter.core.IMediaFiles;
-import de.mossgrabers.projectconverter.core.TimeUtils;
-import de.mossgrabers.tools.ui.BasicConfig;
-import de.mossgrabers.tools.ui.panel.BoxPanel;
-import jakarta.xml.bind.JAXBContext;
-import jakarta.xml.bind.JAXBException;
-import jakarta.xml.bind.Marshaller;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.Project;
@@ -28,21 +29,19 @@ import com.bitwig.dawproject.timeline.Marker;
 import com.bitwig.dawproject.timeline.Markers;
 import com.bitwig.dawproject.timeline.Timeline;
 
+import de.mossgrabers.projectconverter.INotifier;
+import de.mossgrabers.projectconverter.core.AbstractCoreTask;
+import de.mossgrabers.projectconverter.core.DawProjectContainer;
+import de.mossgrabers.projectconverter.core.IDestinationFormat;
+import de.mossgrabers.projectconverter.core.IMediaFiles;
+import de.mossgrabers.projectconverter.core.TimeUtils;
+import de.mossgrabers.tools.ui.BasicConfig;
+import de.mossgrabers.tools.ui.panel.BoxPanel;
+import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBException;
+import jakarta.xml.bind.Marshaller;
 import javafx.geometry.Orientation;
 import javafx.scene.control.CheckBox;
-
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 
 /**
@@ -120,21 +119,20 @@ public class DawProjectDestinationFormat extends AbstractCoreTask implements IDe
         if (this.notifier.isCancelled ())
             return;
 
-        final ZipOutputStream zos = new ZipOutputStream (new FileOutputStream (outputFile));
-
-        addToZip (zos, METADATA_FILE, metadataXML.getBytes (StandardCharsets.UTF_8));
-        addToZip (zos, PROJECT_FILE, projectXML.getBytes (StandardCharsets.UTF_8));
-
-        for (final String id: mediaFiles.getAll ())
+        try (final ZipOutputStream zos = new ZipOutputStream (new FileOutputStream (outputFile)))
         {
-            if (this.notifier.isCancelled ())
-                return;
+            addToZip (zos, METADATA_FILE, metadataXML.getBytes (StandardCharsets.UTF_8));
+            addToZip (zos, PROJECT_FILE, projectXML.getBytes (StandardCharsets.UTF_8));
 
-            this.notifier.log (id.startsWith ("plugins/") ? "IDS_NOTIFY_COMPRESSING_PRESET_FILE" : "IDS_NOTIFY_COMPRESSING_AUDIO_FILE", id);
-            addToZip (zos, id, mediaFiles);
+            for (final String id: mediaFiles.getAll ())
+            {
+                if (this.notifier.isCancelled ())
+                    return;
+
+                this.notifier.log (id.startsWith ("plugins/") ? "IDS_NOTIFY_COMPRESSING_PRESET_FILE" : "IDS_NOTIFY_COMPRESSING_AUDIO_FILE", id);
+                addToZip (zos, id, mediaFiles);
+            }
         }
-
-        zos.close ();
     }
 
 

@@ -305,9 +305,10 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final File outputFile = new File (destinationPath, projectName);
 
         // Store the project file
+        final String formattedChunk = ReaperProject.format (rootChunk);
         try (final FileWriter writer = new FileWriter (outputFile, StandardCharsets.UTF_8))
         {
-            writer.append (ReaperProject.format (rootChunk));
+            writer.append (formattedChunk);
         }
 
         // Store all referenced wave files

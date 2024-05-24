@@ -4,11 +4,6 @@
 
 package de.mossgrabers.projectconverter.format.reaper.model;
 
-import de.mossgrabers.projectconverter.utils.StreamHelper;
-import de.mossgrabers.projectconverter.vst.Vst3Preset;
-import de.mossgrabers.projectconverter.vst.Vst3Preset.Vst3ChunkInfo;
-import de.mossgrabers.tools.ui.Functions;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -17,6 +12,11 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+
+import de.mossgrabers.projectconverter.utils.StreamHelper;
+import de.mossgrabers.projectconverter.vst.Vst3Preset;
+import de.mossgrabers.projectconverter.vst.Vst3Preset.Vst3ChunkInfo;
+import de.mossgrabers.tools.ui.Functions;
 
 
 /**
@@ -197,7 +197,7 @@ public class VstChunkHandler extends DeviceChunkHandler
      * Footer - contains the preset name and some unknown stuff.
      *
      * @param bs The bytes to read
-     * @throws IOException
+     * @throws IOException Could not read the bytes
      */
     private void readLastLine (final byte [] bs) throws IOException
     {
@@ -313,7 +313,7 @@ public class VstChunkHandler extends DeviceChunkHandler
      * Write a VST 3 preset file.
      *
      * @param out The output stream to write to
-     * @param data
+     * @param data The data to write
      * @throws IOException If an error occurs
      */
     private void writeVST3Preset (final OutputStream out, final byte [] data) throws IOException
