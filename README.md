@@ -140,6 +140,14 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.3
+
+* Fixed: Tempo unit was set to 'linear' but needs to 'bpm'. Bitwig ignores this setting but Studio One does not.
+
+### 1.2.2
+
+* Fixed: New build to fix crash on Macos.
+
 ### 1.2.1
 
 * New: Added option on Reaper source to not add audio files to the DAWproject file and keep their original (relative or absolute) file path.

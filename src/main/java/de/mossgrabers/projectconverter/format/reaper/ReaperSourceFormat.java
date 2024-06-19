@@ -414,7 +414,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
         {
             final double [] transParams = getDoubleParams (parameter, -1);
             if (transParams.length > 0)
-                project.transport.tempo = createRealParameter (Unit.linear, 1.0, 960.0, transParams[0]);
+                project.transport.tempo = createRealParameter (Unit.bpm, 1.0, 960.0, transParams[0]);
 
             if (transParams.length >= 3)
             {
