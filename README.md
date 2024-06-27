@@ -140,6 +140,10 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.4
+
+* Fixed: Texts in tabs did not show up on Linux.
+
 ### 1.2.3
 
 * Fixed: Tempo unit was set to 'linear' but needs to 'bpm'. Bitwig ignores this setting but Studio One does not.

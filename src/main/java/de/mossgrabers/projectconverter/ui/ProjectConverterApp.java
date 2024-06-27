@@ -4,12 +4,6 @@
 
 package de.mossgrabers.projectconverter.ui;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
 import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.ConversionTask;
 import de.mossgrabers.projectconverter.core.IDestinationFormat;
@@ -28,6 +22,7 @@ import de.mossgrabers.tools.ui.control.TitledSeparator;
 import de.mossgrabers.tools.ui.panel.BasePanel;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
 import de.mossgrabers.tools.ui.panel.ButtonPanel;
+
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
@@ -50,6 +45,12 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 /**
@@ -82,7 +83,6 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
     private final ExecutorService       executor          = Executors.newSingleThreadExecutor ();
     private Optional<ConversionTask>    conversionTaskOpt = Optional.empty ();
-
 
     /**
      * Main-method.
@@ -530,27 +530,37 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     {
         tabPane.setSide (Side.LEFT);
         tabPane.setRotateGraphic (true);
-        tabPane.setTabMinHeight (80); // Determines tab width. I know, its odd.
+        tabPane.setTabMinHeight (160); // Determines tab width. I know, its odd.
         tabPane.setTabMaxHeight (200);
         tabPane.getStyleClass ().add ("horizontal-tab-pane");
 
         for (final Tab tab: tabPane.getTabs ())
         {
-            final Label l = new Label ("xxxx");
+            final Label l = new Label ("    ");
             l.setVisible (false);
             l.setMaxHeight (0);
             l.setPrefHeight (0);
             tab.setGraphic (l);
 
-            Platform.runLater ( () -> {
-                // Get the "tab-container" node. This is what we want to rotate/shift for easy
-                // left-alignment.
-                final Parent tabContainer = tab.getGraphic ().getParent ().getParent ();
-                tabContainer.setRotate (90);
-                // By default the display will originate from the center. Applying a negative Y
-                // transformation will move it left. Should be the 'TabMinHeight/2'
-                tabContainer.setTranslateY (-60);
-            });
+            Platform.runLater ( () -> rotateTabLabels (tab));
         }
+    }
+
+
+    private static void rotateTabLabels (final Tab tab)
+    {
+        // Get the "tab-container" node. This is what we want to rotate/shift for easy
+        // left-alignment.
+        final Parent parent = tab.getGraphic ().getParent ();
+        if (parent == null)
+        {
+            Platform.runLater ( () -> rotateTabLabels (tab));
+            return;
+        }
+        final Parent tabContainer = parent.getParent ();
+        tabContainer.setRotate (90);
+        // By default the display will originate from the center.
+        // Applying a negative Y transformation will move it left.
+        tabContainer.setTranslateY (-80);
     }
 }
