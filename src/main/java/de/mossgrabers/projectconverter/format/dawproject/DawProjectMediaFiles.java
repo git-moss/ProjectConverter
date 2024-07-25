@@ -4,10 +4,6 @@
 
 package de.mossgrabers.projectconverter.format.dawproject;
 
-import de.mossgrabers.projectconverter.core.IMediaFiles;
-
-import com.bitwig.dawproject.DawProject;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -15,9 +11,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+
+import de.mossgrabers.projectconverter.core.IMediaFiles;
 
 
 /**
@@ -27,18 +27,20 @@ import java.util.zip.ZipFile;
  */
 public class DawProjectMediaFiles implements IMediaFiles
 {
-    private static final String PROJECT_FILE  = "project.xml";
-    private static final String METADATA_FILE = "metadata.xml";
+    private static final String         PROJECT_FILE     = "project.xml";
+    private static final String         METADATA_FILE    = "metadata.xml";
 
-    private final File          sourceFile;
-    private final File          parentPath;
-    private final List<String>  mediaFiles    = new ArrayList<> ();
+    private final File                  sourceFile;
+    private final File                  parentPath;
+    private final List<String>          mediaFiles       = new ArrayList<> ();
+    private final Map<String, ZipEntry> mediaFileEntries = new HashMap<> ();
+    private final ZipFile               zipFile;
 
 
     /**
      * Constructor.
      *
-     * @param sourceFile The dawproject source file
+     * @param sourceFile The DAWproject source file
      * @throws IOException Could not open/read the ZIP source file
      */
     public DawProjectMediaFiles (final File sourceFile) throws IOException
@@ -46,13 +48,14 @@ public class DawProjectMediaFiles implements IMediaFiles
         this.sourceFile = sourceFile;
         this.parentPath = sourceFile.getParentFile ();
 
-        try (final ZipFile zipFile = new ZipFile (this.sourceFile))
+        this.zipFile = new ZipFile (this.sourceFile);
+        for (final ZipEntry zipEntry: Collections.list (this.zipFile.entries ()))
         {
-            for (final ZipEntry zipEntry: Collections.list (zipFile.entries ()))
+            final String name = zipEntry.getName ();
+            if (!PROJECT_FILE.equals (name) && !METADATA_FILE.equals (name))
             {
-                final String name = zipEntry.getName ();
-                if (!PROJECT_FILE.equals (name) && !METADATA_FILE.equals (name))
-                    this.mediaFiles.add (name);
+                this.mediaFiles.add (name);
+                this.mediaFileEntries.put (name, zipEntry);
             }
         }
     }
@@ -69,7 +72,7 @@ public class DawProjectMediaFiles implements IMediaFiles
 
         try
         {
-            return DawProject.streamEmbedded (this.sourceFile, id);
+            return this.zipFile.getInputStream (this.mediaFileEntries.get (id));
         }
         catch (final NullPointerException ex)
         {
@@ -91,5 +94,13 @@ public class DawProjectMediaFiles implements IMediaFiles
     public List<String> getAll ()
     {
         return this.mediaFiles;
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void close () throws IOException
+    {
+        this.zipFile.close ();
     }
 }

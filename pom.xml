@@ -5,7 +5,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>de.mossgrabers</groupId>
 	<artifactId>projectconverter</artifactId>
-	<version>1.2.4</version>
+	<version>1.2.5</version>
 	<name>ProjectConverter</name>
 	<description>Convert from/to a specific DAW project format to/from generic
 		dawproject</description>
@@ -45,7 +45,7 @@
 		<dependency>
 			<artifactId>uitools</artifactId>
 			<groupId>de.mossgrabers</groupId>
-			<version>1.4.4</version>
+			<version>1.4.5</version>
 		</dependency>
 		<dependency>
 			<groupId>com.bitwig.open</groupId>
@@ -100,7 +100,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-jar-plugin</artifactId>
-				<version>3.4.1</version>
+				<version>3.4.2</version>
 				<configuration>
 					<outputDirectory>target/lib</outputDirectory>
 					<archive>
@@ -133,7 +133,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-dependency-plugin</artifactId>
-				<version>3.7.0</version>
+				<version>3.7.1</version>
 				<executions>
 					<execution>
 						<id>copy-dependencies</id>
@@ -202,7 +202,7 @@
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>versions-maven-plugin</artifactId>
-				<version>2.16.2</version>
+				<version>2.17.1</version>
 				<configuration>
 					<ignoredVersions>.*-M.*,.*-alpha.*,.*-ea.*</ignoredVersions>
 					<generateBackupPoms>false</generateBackupPoms>
@@ -213,7 +213,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-clean-plugin</artifactId>
-				<version>3.3.2</version>
+				<version>3.4.0</version>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -238,7 +238,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>3.3.0</version>
+				<version>3.3.1</version>
 			</plugin>
 
 		</plugins>

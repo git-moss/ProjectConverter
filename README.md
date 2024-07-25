@@ -140,6 +140,11 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.5
+
+* New: Huge speed up of media file extraction from DAWproject.
+* Fixed: Clips could be missing if a parent wrapper clip had no duration set.
+
 ### 1.2.4
 
 * Fixed: Texts in tabs did not show up on Linux.

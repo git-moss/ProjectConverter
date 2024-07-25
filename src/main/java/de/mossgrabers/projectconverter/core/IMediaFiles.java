@@ -4,6 +4,7 @@
 
 package de.mossgrabers.projectconverter.core;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,7 +17,7 @@ import java.util.List;
  *
  * @author Jürgen Moßgraber
  */
-public interface IMediaFiles
+public interface IMediaFiles extends Closeable
 {
     /**
      * Get an input stream to read a media file.

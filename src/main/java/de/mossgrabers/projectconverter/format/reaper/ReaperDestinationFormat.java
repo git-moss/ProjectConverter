@@ -79,6 +79,7 @@ import de.mossgrabers.projectconverter.format.reaper.model.Node;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
 import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
+import de.mossgrabers.tools.ExecutionTimer;
 import de.mossgrabers.tools.ui.BasicConfig;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
 import javafx.collections.ObservableList;
@@ -311,6 +312,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             writer.append (formattedChunk);
         }
 
+        final ExecutionTimer timer = new ExecutionTimer ();
+        timer.start ();
+
         // Store all referenced wave files
         final IMediaFiles mediaFiles = dawProject.getMediaFiles ();
         for (final String audioFile: parameters.audioFiles)
@@ -335,6 +339,9 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_AUDIO_CHUNK", audioFile);
             }
         }
+        
+        timer.stop ();
+        timer.print (System.out);
     }
 
 
@@ -776,9 +783,10 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             innerParentClip.comment = clip.comment;
             innerParentClip.loopStart = clip.loopStart == null ? 0 : clip.loopStart.doubleValue ();
             innerParentClip.loopEnd = clip.loopEnd == null ? -1 : clip.loopEnd.doubleValue ();
+            // Calculate the absolute position
             innerParentClip.position = parentClip.position + clip.time;
             innerParentClip.offset = clip.playStart == null ? 0 : clip.playStart.doubleValue ();
-            innerParentClip.duration = Math.min (innerParentClip.position + duration, +parentClip.position + parentClip.duration) - innerParentClip.position;
+            innerParentClip.duration = parentClip.duration > 0 ? Math.min (duration, parentClip.position + parentClip.duration - innerParentClip.position) : duration;
             this.convertItems (trackChunk, track, groupedClips, innerParentClip, isBeats, parameters);
             return;
         }

@@ -4,15 +4,14 @@
 
 package de.mossgrabers.projectconverter.core;
 
-import de.mossgrabers.projectconverter.INotifier;
-
-import com.bitwig.dawproject.DawProject;
-
-import javafx.concurrent.Task;
-
 import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
+
+import com.bitwig.dawproject.DawProject;
+
+import de.mossgrabers.projectconverter.INotifier;
+import javafx.concurrent.Task;
 
 
 /**
@@ -52,22 +51,11 @@ public class ConversionTask extends Task<Void>
     @Override
     protected Void call ()
     {
-        try
+        // Parse the project file
+        this.notifier.log ("IDS_NOTIFY_PARSING_FILE", this.sourceFile.getAbsolutePath ());
+
+        try (final DawProjectContainer dawProject = this.sourceFormat.read (this.sourceFile);)
         {
-            // Parse the project file
-            this.notifier.log ("IDS_NOTIFY_PARSING_FILE", this.sourceFile.getAbsolutePath ());
-
-            final DawProjectContainer dawProject;
-            try
-            {
-                dawProject = this.sourceFormat.read (this.sourceFile);
-            }
-            catch (final IOException | ParseException ex)
-            {
-                this.notifier.logError ("IDS_NOTIFY_COULD_NOT_READ", ex);
-                return null;
-            }
-
             if (this.waitForDelivery ())
                 return null;
 
@@ -96,6 +84,11 @@ public class ConversionTask extends Task<Void>
                 this.notifier.logError ("IDS_NOTIFY_COULD_NOT_WRITE_FILE", ex);
                 return null;
             }
+        }
+        catch (final IOException | ParseException ex)
+        {
+            this.notifier.logError ("IDS_NOTIFY_COULD_NOT_READ", ex);
+            return null;
         }
         catch (final Exception ex)
         {

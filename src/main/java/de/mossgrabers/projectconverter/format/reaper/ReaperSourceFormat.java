@@ -181,6 +181,8 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
 
         Referenceable.resetID ();
 
+        // Resource is closed in DawProjectContainer
+        @SuppressWarnings("resource")
         final DawProjectContainer dawProject = new DawProjectContainer (FileUtils.getNameWithoutType (sourceFile), new ReaperMediaFiles ());
 
         final Project project = dawProject.getProject ();

@@ -4,19 +4,18 @@
 
 package de.mossgrabers.projectconverter.format.dawproject;
 
+import java.io.File;
+import java.io.IOException;
+import java.text.ParseException;
+
 import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.AbstractCoreTask;
 import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.ISourceFormat;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
-
 import javafx.geometry.Orientation;
 import javafx.scene.control.Label;
 import javafx.stage.FileChooser.ExtensionFilter;
-
-import java.io.File;
-import java.io.IOException;
-import java.text.ParseException;
 
 
 /**
@@ -60,7 +59,8 @@ public class DawProjectSourceFormat extends AbstractCoreTask implements ISourceF
     }
 
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc} Note: Resource is closed in DawProjectContainer. */
+    @SuppressWarnings("resource")
     @Override
     public DawProjectContainer read (final File sourceFile) throws IOException, ParseException
     {

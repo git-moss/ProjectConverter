@@ -4,8 +4,6 @@
 
 package de.mossgrabers.projectconverter.format.reaper;
 
-import de.mossgrabers.projectconverter.core.IMediaFiles;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -15,9 +13,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import de.mossgrabers.projectconverter.core.IMediaFiles;
+
 
 /**
- * Access to additional Reaper media files. Audio and plugin states.
+ * Access to additional Reaper media files. Audio and plug-in states.
  *
  * @author Jürgen Moßgraber
  */
@@ -47,5 +47,13 @@ public class ReaperMediaFiles implements IMediaFiles
     public List<String> getAll ()
     {
         return new ArrayList<> (this.mediaFiles.keySet ());
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void close () throws IOException
+    {
+        // Nothing to clean up
     }
 }

@@ -4,14 +4,15 @@
 
 package de.mossgrabers.projectconverter.core;
 
-import de.mossgrabers.tools.FileUtils;
+import java.io.Closeable;
+import java.io.File;
+import java.io.IOException;
 
 import com.bitwig.dawproject.DawProject;
 import com.bitwig.dawproject.MetaData;
 import com.bitwig.dawproject.Project;
 
-import java.io.File;
-import java.io.IOException;
+import de.mossgrabers.tools.FileUtils;
 
 
 /**
@@ -19,7 +20,7 @@ import java.io.IOException;
  *
  * @author Jürgen Moßgraber
  */
-public class DawProjectContainer
+public class DawProjectContainer implements Closeable
 {
     private final String      name;
     private final MetaData    metadata;
@@ -112,5 +113,13 @@ public class DawProjectContainer
     public double getBeatsPerSecond ()
     {
         return this.project.transport.tempo.value.doubleValue () / 60.0;
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void close () throws IOException
+    {
+        this.mediaFiles.close ();
     }
 }
