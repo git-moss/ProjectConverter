@@ -339,7 +339,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                 this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_AUDIO_CHUNK", audioFile);
             }
         }
-        
+
         timer.stop ();
         timer.print (System.out);
     }
@@ -682,7 +682,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
     /**
      * Convert a CLAP device to Reaper.
      *
-     * @param clapPlugin The CLAP plugin to convert
+     * @param clapPlugin The CLAP plug-in to convert
      * @param fxChunk The FX chunk where to add the device information
      * @param mediaFiles Access to additional media files
      * @throws IOException Could not create the VST chunks
@@ -834,6 +834,11 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
                     this.convertLoopedAudio (itemChunk, clip, audio, null, parentClip, sourceIsBeats, parameters, isBeats, duration, start, itemChunk);
                 else if (trackTimeline instanceof final Warps warps)
                     this.convertLoopedAudio (itemChunk, clip, null, warps, parentClip, sourceIsBeats, parameters, isBeats, duration, start, itemChunk);
+                else if (trackTimeline instanceof final Points points)
+                {
+                    if (points.target != null && points.target.expression != null)
+                        this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_ENVELOPE", points.target.expression.name ());
+                }
                 else
                     this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", trackTimeline.getClass ().getName ());
             }
