@@ -81,6 +81,7 @@ import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
 import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
 import de.mossgrabers.tools.ExecutionTimer;
 import de.mossgrabers.tools.ui.BasicConfig;
+import de.mossgrabers.tools.ui.Functions;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
 import javafx.collections.ObservableList;
 import javafx.geometry.Orientation;
@@ -140,11 +141,12 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
         final BoxPanel panel = new BoxPanel (Orientation.VERTICAL);
 
         panel.createSeparator ("@IDS_ARRANGEMENT_OR_SCENES");
-
         this.arrangementOrScenesGroup = new ToggleGroup ();
         final RadioButton order1 = panel.createRadioButton ("@IDS_SOURCE_ARRANGEMENT");
+        order1.setAccessibleHelp (Functions.getMessage ("IDS_ARRANGEMENT_OR_SCENES"));
         order1.setToggleGroup (this.arrangementOrScenesGroup);
         final RadioButton order2 = panel.createRadioButton ("@IDS_SOURCE_SCENES");
+        order2.setAccessibleHelp (Functions.getMessage ("IDS_ARRANGEMENT_OR_SCENES"));
         order2.setToggleGroup (this.arrangementOrScenesGroup);
 
         return panel.getPane ();

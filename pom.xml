@@ -5,7 +5,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>de.mossgrabers</groupId>
 	<artifactId>projectconverter</artifactId>
-	<version>1.2.5</version>
+	<version>1.2.6</version>
 	<name>ProjectConverter</name>
 	<description>Convert from/to a specific DAW project format to/from generic
 		dawproject</description>
@@ -45,7 +45,7 @@
 		<dependency>
 			<artifactId>uitools</artifactId>
 			<groupId>de.mossgrabers</groupId>
-			<version>1.4.5</version>
+			<version>1.5.0</version>
 		</dependency>
 		<dependency>
 			<groupId>com.bitwig.open</groupId>
@@ -233,12 +233,12 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-site-plugin</artifactId>
-				<version>3.12.1</version>
+				<version>3.20.0</version>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>3.3.1</version>
+				<version>3.4.0</version>
 			</plugin>
 
 		</plugins>

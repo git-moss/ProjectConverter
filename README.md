@@ -140,6 +140,14 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.6
+
+* Several accessibility improvements and fixes: 
+  * Button mnemonics were partially broken.
+  * Improved order of tabulator traversal.
+  * Added more tooltip info
+  * Set default button states, can be execute by pressing *Return*.
+
 ### 1.2.5
 
 * New: Huge speed up of media file extraction from DAWproject.

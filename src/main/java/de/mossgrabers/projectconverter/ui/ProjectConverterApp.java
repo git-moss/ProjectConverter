@@ -4,6 +4,12 @@
 
 package de.mossgrabers.projectconverter.ui;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.ConversionTask;
 import de.mossgrabers.projectconverter.core.IDestinationFormat;
@@ -17,12 +23,12 @@ import de.mossgrabers.tools.ui.AbstractFrame;
 import de.mossgrabers.tools.ui.DefaultApplication;
 import de.mossgrabers.tools.ui.EndApplicationException;
 import de.mossgrabers.tools.ui.Functions;
+import de.mossgrabers.tools.ui.TraversalManager;
 import de.mossgrabers.tools.ui.control.LoggerBox;
 import de.mossgrabers.tools.ui.control.TitledSeparator;
 import de.mossgrabers.tools.ui.panel.BasePanel;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
 import de.mossgrabers.tools.ui.panel.ButtonPanel;
-
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
@@ -36,6 +42,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.effect.BlendMode;
 import javafx.scene.image.Image;
 import javafx.scene.layout.BorderPane;
@@ -45,12 +52,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 
 /**
@@ -72,6 +73,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
     private TextField                   sourceFileField;
     private TextField                   destinationPathField;
+    private Button                      sourceFileSelectButton;
+    private Button                      destinationFolderSelectButton;
     private File                        sourceFile;
     private File                        outputPath;
     private CheckBox                    enableDarkMode;
@@ -80,9 +83,11 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     private Button                      convertButton;
     private Button                      cancelButton;
     private final LoggerBox             loggingArea       = new LoggerBox ();
+    private final TraversalManager      traversalManager  = new TraversalManager ();
 
     private final ExecutorService       executor          = Executors.newSingleThreadExecutor ();
     private Optional<ConversionTask>    conversionTaskOpt = Optional.empty ();
+
 
     /**
      * Main-method.
@@ -134,9 +139,10 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         ////////////////////////////////////////////////////////////////////
 
         final ButtonPanel buttonPanel = new ButtonPanel (Orientation.VERTICAL);
-        this.convertButton = setupButton (buttonPanel, "Convert", "@IDS_MAIN_CONVERT");
+        this.convertButton = setupButton (buttonPanel, "Convert", "@IDS_MAIN_CONVERT", "@IDS_MAIN_CONVERT_TOOLTIP");
         this.convertButton.setOnAction (event -> this.execute ());
-        this.cancelButton = setupButton (buttonPanel, "Cancel", "@IDS_MAIN_CANCEL");
+        this.convertButton.setDefaultButton (true);
+        this.cancelButton = setupButton (buttonPanel, "Cancel", "@IDS_MAIN_CANCEL", "@IDS_MAIN_CANCEL_TOOLTIP");
         this.cancelButton.setOnAction (event -> this.cancelExecution ());
 
         final BorderPane buttonPane = new BorderPane ();
@@ -151,12 +157,15 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         this.sourceFileField = new TextField ();
         final BorderPane sourceFolderPanel = new BorderPane (this.sourceFileField);
 
-        final Button sourceFileSelectButton = new Button (Functions.getText ("@IDS_MAIN_SELECT_SOURCE"));
-        sourceFileSelectButton.setOnAction (event -> this.selectSourceFile ());
-        sourceFolderPanel.setRight (sourceFileSelectButton);
+        this.sourceFileSelectButton = new Button (Functions.getText ("@IDS_MAIN_SELECT_SOURCE"));
+        this.sourceFileSelectButton.setTooltip (new Tooltip (Functions.getText ("@IDS_MAIN_SELECT_SOURCE_TOOLTIP")));
+        this.sourceFileSelectButton.setOnAction (event -> this.selectSourceFile ());
+        sourceFolderPanel.setRight (this.sourceFileSelectButton);
 
         final BoxPanel sourceUpperPart = new BoxPanel (Orientation.VERTICAL);
-        sourceUpperPart.addComponent (new TitledSeparator (Functions.getText ("@IDS_MAIN_SOURCE_HEADER")));
+        final TitledSeparator sourceTitle = new TitledSeparator (Functions.getText ("@IDS_MAIN_SOURCE_HEADER"));
+        sourceTitle.setLabelFor (this.sourceFileField);
+        sourceUpperPart.addComponent (sourceTitle);
         sourceUpperPart.addComponent (sourceFolderPanel);
 
         sourcePane.setTop (sourceUpperPart.getPane ());
@@ -182,12 +191,15 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         this.destinationPathField = new TextField ();
         final BorderPane destinationFolderPanel = new BorderPane (this.destinationPathField);
 
-        final Button destinationFolderSelectButton = new Button (Functions.getText ("@IDS_MAIN_SELECT_DESTINATION"));
-        destinationFolderSelectButton.setOnAction (event -> this.selectDestinationFolder ());
-        destinationFolderPanel.setRight (destinationFolderSelectButton);
+        this.destinationFolderSelectButton = new Button (Functions.getText ("@IDS_MAIN_SELECT_DESTINATION"));
+        this.destinationFolderSelectButton.setTooltip (new Tooltip (Functions.getText ("@IDS_MAIN_SELECT_DESTINATION_TOOLTIP")));
+        this.destinationFolderSelectButton.setOnAction (event -> this.selectDestinationFolder ());
+        destinationFolderPanel.setRight (this.destinationFolderSelectButton);
 
         final BoxPanel destinationUpperPart = new BoxPanel (Orientation.VERTICAL);
-        destinationUpperPart.addComponent (new TitledSeparator ("@IDS_MAIN_DESTINATION_HEADER"));
+        final TitledSeparator destinationHeader = new TitledSeparator ("@IDS_MAIN_DESTINATION_HEADER");
+        destinationHeader.setLabelFor (this.destinationPathField);
+        destinationUpperPart.addComponent (destinationHeader);
         destinationUpperPart.addComponent (destinationFolderPanel);
 
         destinationPane.setTop (destinationUpperPart.getPane ());
@@ -238,6 +250,35 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         this.updateTitle (null);
         this.updateButtonStates (false);
+
+        this.sourceFileField.requestFocus ();
+        this.configureTraversalManager ();
+    }
+
+
+    private void configureTraversalManager ()
+    {
+        this.traversalManager.add (this.sourceFileField);
+        this.traversalManager.add (this.sourceFileSelectButton);
+        this.traversalManager.add (this.sourceTabPane);
+        for (final Tab tab: this.sourceTabPane.getTabs ())
+            if (tab.getContent () instanceof final Parent content)
+                this.traversalManager.addChildren (content);
+
+        this.traversalManager.add (this.destinationPathField);
+        this.traversalManager.add (this.destinationFolderSelectButton);
+        this.traversalManager.add (this.destinationTabPane);
+        for (final Tab tab: this.destinationTabPane.getTabs ())
+            if (tab.getContent () instanceof final Parent content)
+                this.traversalManager.addChildren (content);
+
+        this.traversalManager.add (this.cancelButton);
+        this.traversalManager.add (this.convertButton);
+
+        this.traversalManager.add (this.loggingArea.getWebView ());
+        this.traversalManager.add (this.enableDarkMode);
+
+        this.traversalManager.register (this.getStage ());
     }
 
 
@@ -415,8 +456,11 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         final String stylesheet = this.startPath + "/css/Darkmode.css";
         if (isSelected)
         {
-            stylesheets.add (stylesheet);
-            this.loggingArea.getWebView ().setBlendMode (BlendMode.OVERLAY);
+            if (!stylesheets.contains (stylesheet))
+            {
+                stylesheets.add (stylesheet);
+                this.loggingArea.getWebView ().setBlendMode (BlendMode.OVERLAY);
+            }
         }
         else
         {
@@ -442,14 +486,12 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         {
             final ExtensionFilter filter = this.sourceExtensionFilters[i];
             for (final String extension: filter.getExtensions ())
-            {
                 // Remove '*' and compare ending
                 if (absolutePath.endsWith (extension.substring (1)))
                 {
                     this.sourceTabPane.getSelectionModel ().select (i - 1);
                     return;
                 }
-            }
         }
     }
 
@@ -502,13 +544,28 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     public void updateButtonStates (final boolean isExecuting)
     {
         Platform.runLater ( () -> {
+
+            final WebView webView = this.loggingArea.getWebView ();
             this.cancelButton.setDisable (!isExecuting);
             this.convertButton.setDisable (isExecuting);
+            if (!this.cancelButton.isDisabled ())
+            {
+                this.cancelButton.setDefaultButton (true);
+                this.cancelButton.requestFocus ();
+                webView.setAccessibleText (Functions.getMessage ("IDS_NOTIFY_PROCESSING"));
+            }
+            else
+            {
+                this.convertButton.setDefaultButton (true);
+                this.convertButton.requestFocus ();
+                webView.setAccessibleText (Functions.getMessage ("IDS_NOTIFY_FINISHED"));
+            }
+
         });
     }
 
 
-    private static Button setupButton (final BasePanel panel, final String iconName, final String labelName) throws EndApplicationException
+    private static Button setupButton (final BasePanel panel, final String iconName, final String labelName, final String mnemonic) throws EndApplicationException
     {
         Image icon;
         try
@@ -519,7 +576,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         {
             throw new EndApplicationException (ex);
         }
-        final Button button = panel.createButton (icon, labelName);
+        final Button button = panel.createButton (icon, labelName, mnemonic);
         button.alignmentProperty ().set (Pos.CENTER_LEFT);
         button.graphicTextGapProperty ().set (12);
         return button;
