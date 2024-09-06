@@ -37,12 +37,17 @@ jobs:
           - os: ubuntu-latest
             artifact_name: projectconverter*.deb
             build_name: linux
-          - os: macos-latest
-            artifact_name: ProjectConverter*.dmg
-            build_name: mac
           - os: windows-latest
             artifact_name: ProjectConverter*.msi
             build_name: win
+          # This is ARM64
+          - os: macos-14
+            artifact_name: ProjectConverter*.dmg
+            build_name: mac-arm
+          # This is x64
+          - os: macos-13
+            artifact_name: ProjectConverter*.dmg
+            build_name: mac-x64
     
     name: ${{ matrix.os }}
 
@@ -69,3 +74,4 @@ jobs:
       with:
         name: ProjectConverter-Installers
         pattern: ProjectConverter-Installers-*
+        separate-directories: true
