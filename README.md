@@ -140,6 +140,10 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.7
+
+* Fixed: Group was missing when it was the 1st track in a group.
+
 ### 1.2.6
 
 * Several accessibility improvements and fixes: 

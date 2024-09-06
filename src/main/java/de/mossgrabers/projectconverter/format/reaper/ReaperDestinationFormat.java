@@ -1426,7 +1426,7 @@ public class ReaperDestinationFormat extends AbstractCoreTask implements IDestin
             final List<Track> children = new ArrayList<> (childTracks);
             for (final Track child: childTracks)
             {
-                if (child.channel != null && child.channel.role == MixerRole.master)
+                if (!hasContent (ContentType.tracks, child.contentType) && child.channel != null && child.channel.role == MixerRole.master)
                 {
                     trackInfo.track = child;
                     children.remove (child);
