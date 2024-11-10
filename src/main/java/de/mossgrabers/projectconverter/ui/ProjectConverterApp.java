@@ -14,10 +14,10 @@ import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.ConversionTask;
 import de.mossgrabers.projectconverter.core.IDestinationFormat;
 import de.mossgrabers.projectconverter.core.ISourceFormat;
-import de.mossgrabers.projectconverter.format.dawproject.DawProjectDestinationFormat;
-import de.mossgrabers.projectconverter.format.dawproject.DawProjectSourceFormat;
-import de.mossgrabers.projectconverter.format.reaper.ReaperDestinationFormat;
-import de.mossgrabers.projectconverter.format.reaper.ReaperSourceFormat;
+import de.mossgrabers.projectconverter.format.dawproject.DawProjectCreator;
+import de.mossgrabers.projectconverter.format.dawproject.DawProjectDetector;
+import de.mossgrabers.projectconverter.format.reaper.ReaperCreator;
+import de.mossgrabers.projectconverter.format.reaper.ReaperDetector;
 import de.mossgrabers.tools.FileUtils;
 import de.mossgrabers.tools.ui.AbstractFrame;
 import de.mossgrabers.tools.ui.DefaultApplication;
@@ -111,8 +111,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         this.sourceFormats = new ISourceFormat []
         {
-            new DawProjectSourceFormat (this),
-            new ReaperSourceFormat (this)
+            new DawProjectDetector (this),
+            new ReaperDetector (this)
         };
 
         this.sourceExtensionFilters = new ExtensionFilter [this.sourceFormats.length + 1];
@@ -122,8 +122,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         this.destinationFormats = new IDestinationFormat []
         {
-            new DawProjectDestinationFormat (this),
-            new ReaperDestinationFormat (this)
+            new DawProjectCreator (this),
+            new ReaperCreator (this)
         };
     }
 

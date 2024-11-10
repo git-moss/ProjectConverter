@@ -4,14 +4,14 @@
 
 package de.mossgrabers.projectconverter.core;
 
+import java.util.List;
+
 import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.timeline.Clip;
 import com.bitwig.dawproject.timeline.ClipSlot;
 import com.bitwig.dawproject.timeline.TimeUnit;
 import com.bitwig.dawproject.timeline.Timeline;
 import com.bitwig.dawproject.timeline.Warps;
-
-import java.util.List;
 
 
 /**
@@ -67,6 +67,20 @@ public class TimeUtils
     public static boolean updateWarpsTimeIsBeats (final Warps warps, final boolean isBeats)
     {
         return warps.contentTimeUnit == null ? isBeats : warps.contentTimeUnit == TimeUnit.beats;
+    }
+
+
+    /**
+     * Checks if the given clip object has a time unit setting, if not the current time unit is
+     * returned.
+     *
+     * @param clip The clip object to check
+     * @param isBeats The current setting, true if set to Beats
+     * @return True if beats otherwise seconds
+     */
+    public static boolean updateClipTimeIsBeats (final Clip clip, final boolean isBeats)
+    {
+        return clip.contentTimeUnit == null ? isBeats : clip.contentTimeUnit == TimeUnit.beats;
     }
 
 

@@ -105,7 +105,7 @@ import javafx.stage.FileChooser.ExtensionFilter;
  *
  * @author Jürgen Moßgraber
  */
-public class ReaperSourceFormat extends AbstractCoreTask implements ISourceFormat
+public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 {
     private static final Pattern         PATTERN_DEVICE_DESCRIPTION  = Pattern.compile ("(VST|VSTi|VST3|VST3i|CLAP|CLAPi)?:\\s(.*)(\\s\\((.*)\\))?");
     private static final Pattern         PATTERN_VST2_ID             = Pattern.compile ("(.*)<.*");
@@ -130,7 +130,7 @@ public class ReaperSourceFormat extends AbstractCoreTask implements ISourceForma
      *
      * @param notifier The notifier
      */
-    public ReaperSourceFormat (final INotifier notifier)
+    public ReaperDetector (final INotifier notifier)
     {
         super ("Reaper", notifier);
     }

@@ -140,6 +140,12 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.8
+
+* Fixed: (Looped) nested clips could have wrong positions when writing Reaper project.
+* Fixed: The playrate could be wrong for non-US locales which do not use a dot when writing Reaper project.
+* Fixed: Source time unit in a dawproject file could be falsely detected as beats instead of seconds.
+
 ### 1.2.7
 
 * Fixed: Group was missing when it was the 1st track in a group.

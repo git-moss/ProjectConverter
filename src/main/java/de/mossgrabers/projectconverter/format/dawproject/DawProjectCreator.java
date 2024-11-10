@@ -49,7 +49,7 @@ import javafx.scene.control.CheckBox;
  *
  * @author Jürgen Moßgraber
  */
-public class DawProjectDestinationFormat extends AbstractCoreTask implements IDestinationFormat
+public class DawProjectCreator extends AbstractCoreTask implements IDestinationFormat
 {
     private static final String PROJECT_FILE        = "project.xml";
     private static final String METADATA_FILE       = "metadata.xml";
@@ -63,7 +63,7 @@ public class DawProjectDestinationFormat extends AbstractCoreTask implements IDe
      *
      * @param notifier The notifier for error messages
      */
-    public DawProjectDestinationFormat (final INotifier notifier)
+    public DawProjectCreator (final INotifier notifier)
     {
         super ("DawProject", notifier);
     }

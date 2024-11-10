@@ -23,7 +23,7 @@ import javafx.stage.FileChooser.ExtensionFilter;
  *
  * @author Jürgen Moßgraber
  */
-public class DawProjectSourceFormat extends AbstractCoreTask implements ISourceFormat
+public class DawProjectDetector extends AbstractCoreTask implements ISourceFormat
 {
     private static final ExtensionFilter EXTENSION_FILTER = new ExtensionFilter ("DawProject", "*.dawproject");
 
@@ -33,7 +33,7 @@ public class DawProjectSourceFormat extends AbstractCoreTask implements ISourceF
      *
      * @param notifier The notifier
      */
-    public DawProjectSourceFormat (final INotifier notifier)
+    public DawProjectDetector (final INotifier notifier)
     {
         super ("DawProject", notifier);
     }
