@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2023
+// (c) 2021-2024
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.format.reaper;
@@ -17,6 +17,7 @@ import java.util.Set;
 public class ReaperTags
 {
     protected static final String    PROJECT_ROOT               = "REAPER_PROJECT";
+    protected static final String    PROJECT_MIXERUI_FLAGS      = "MIXERUIFLAGS";
     protected static final String    PROJECT_TEMPO              = "TEMPO";
     protected static final String    PROJECT_RENDER_METADATA    = "RENDER_METADATA";
     protected static final String    PROJECT_AUTHOR             = "AUTHOR";

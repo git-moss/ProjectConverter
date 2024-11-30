@@ -3,27 +3,27 @@
   <groupId>com.bitwig.open</groupId>
   <artifactId>dawproject</artifactId>
   <versioning>
-    <lastUpdated>20230924172917</lastUpdated>
+    <lastUpdated>20241122211116</lastUpdated>
     <snapshot>
-      <timestamp>20230924.172917</timestamp>
-      <buildNumber>7</buildNumber>
+      <timestamp>20241122.211116</timestamp>
+      <buildNumber>16</buildNumber>
     </snapshot>
     <snapshotVersions>
       <snapshotVersion>
         <extension>jar</extension>
-        <value>1-20230924.172917-7</value>
-        <updated>20230924172917</updated>
+        <value>1-20241122.211116-16</value>
+        <updated>20241122211116</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
-        <value>1-20230924.172917-7</value>
-        <updated>20230924172917</updated>
+        <value>1-20241122.211116-16</value>
+        <updated>20241122211116</updated>
       </snapshotVersion>
       <snapshotVersion>
         <classifier>sources</classifier>
         <extension>jar</extension>
-        <value>1-20230924.172917-7</value>
-        <updated>20230924172917</updated>
+        <value>1-20241122.211116-16</value>
+        <updated>20241122211116</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>

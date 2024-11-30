@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+   <modelVersion>4.0.0</modelVersion>
+   <groupId>com.bitwig.open</groupId>
+   <artifactId>dawproject</artifactId>
+   <packaging>jar</packaging>
+   <name>dawproject file format</name>
+   <version>1-SNAPSHOT</version>
+
+   <properties>
+      <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+   </properties>
+
+   <repositories>
+      <repository>
+         <id>central</id>
+         <url>https://repo.maven.apache.org/maven2/</url>
+      </repository>
+   </repositories>
+
+   <dependencies>
+      <dependency>
+         <groupId>junit</groupId>
+         <artifactId>junit</artifactId>
+         <version>4.13.2</version>
+         <scope>test</scope>
+      </dependency>
+      <dependency>
+         <groupId>jakarta.xml.bind</groupId>
+         <artifactId>jakarta.xml.bind-api</artifactId>
+         <version>4.0.2</version>
+      </dependency>
+      <dependency>
+         <groupId>com.sun.xml.bind</groupId>
+         <artifactId>jaxb-impl</artifactId>
+         <version>4.0.5</version>
+         <scope>runtime</scope>
+      </dependency>
+      <dependency>
+         <groupId>commons-io</groupId>
+         <artifactId>commons-io</artifactId>
+         <version>2.18.0</version>
+      </dependency>
+      <dependency>
+         <groupId>com.github.therapi</groupId>
+         <artifactId>therapi-runtime-javadoc-scribe</artifactId>
+         <version>0.15.0</version>
+      </dependency>
+      <dependency>
+         <groupId>com.github.therapi</groupId>
+         <artifactId>therapi-runtime-javadoc</artifactId>
+         <version>0.15.0</version>
+      </dependency>
+      <dependency>
+         <groupId>com.j2html</groupId>
+         <artifactId>j2html</artifactId>
+         <version>1.6.0</version>
+      </dependency>
+      <dependency>
+         <groupId>org.reflections</groupId>
+         <artifactId>reflections</artifactId>
+         <version>0.10.2</version>
+      </dependency>
+   </dependencies>
+
+   <build>
+      <plugins>
+
+			<!-- Enforce a minimum Maven version -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>3.5.0</version>
+				<executions>
+					<execution>
+						<id>enforce-maven</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireMavenVersion>
+									<version>3.8.1</version>
+								</requireMavenVersion>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Check for outdated libraries -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>versions-maven-plugin</artifactId>
+				<version>2.18.0</version>
+				<configuration>
+					<ignoredVersions>.*-M.*,.*-alpha.*,.*-beta.*,.*-ea.*</ignoredVersions>
+					<generateBackupPoms>false</generateBackupPoms>
+				</configuration>
+			</plugin>
+
+         <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>3.13.0</version>
+            <configuration>
+               <fork>true</fork>
+               <source>21</source>
+               <target>21</target>
+               <encoding>UTF-8</encoding>
+               <maxmem>1024m</maxmem>
+            </configuration>
+         </plugin>
+
+         <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+               <execution>
+                  <id>attach-sources</id>
+                  <goals>
+                     <goal>jar</goal>
+                  </goals>
+               </execution>
+            </executions>
+         </plugin>
+
+      </plugins>
+   </build>
+
+</project>

@@ -1,11 +1,13 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2023
+// (c) 2021-2024
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.ui;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,7 +26,7 @@ import de.mossgrabers.tools.ui.DefaultApplication;
 import de.mossgrabers.tools.ui.EndApplicationException;
 import de.mossgrabers.tools.ui.Functions;
 import de.mossgrabers.tools.ui.TraversalManager;
-import de.mossgrabers.tools.ui.control.LoggerBox;
+import de.mossgrabers.tools.ui.control.LoggerBoxWeb;
 import de.mossgrabers.tools.ui.control.TitledSeparator;
 import de.mossgrabers.tools.ui.panel.BasePanel;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
@@ -38,10 +40,10 @@ import javafx.geometry.Side;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
-import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.effect.BlendMode;
 import javafx.scene.image.Image;
@@ -61,18 +63,23 @@ import javafx.stage.Stage;
  */
 public class ProjectConverterApp extends AbstractFrame implements INotifier
 {
-    private static final String         ENABLE_DARK_MODE  = "EnableDarkMode";
-    private static final String         DESTINATION_PATH  = "DestinationPath";
-    private static final String         DESTINATION_TYPE  = "DestinationType";
-    private static final String         SOURCE_PATH       = "SourcePath";
-    private static final String         SOURCE_TYPE       = "SourceType";
+    private static final int            NUMBER_OF_DIRECTORIES  = 20;
+
+    private static final String         ENABLE_DARK_MODE       = "EnableDarkMode";
+    private static final String         DESTINATION_PATH       = "DestinationPath";
+    private static final String         DESTINATION_TYPE       = "DestinationType";
+    private static final String         SOURCE_PATH            = "SourcePath";
+    private static final String         SOURCE_TYPE            = "SourceType";
 
     private final ISourceFormat []      sourceFormats;
     private final IDestinationFormat [] destinationFormats;
     private final ExtensionFilter []    sourceExtensionFilters;
 
-    private TextField                   sourceFileField;
-    private TextField                   destinationPathField;
+    private final ComboBox<String>      sourcePathField        = new ComboBox<> ();
+    private final ComboBox<String>      destinationPathField   = new ComboBox<> ();
+    private final List<String>          sourcePathHistory      = new ArrayList<> ();
+    private final List<String>          destinationPathHistory = new ArrayList<> ();
+
     private Button                      sourceFileSelectButton;
     private Button                      destinationFolderSelectButton;
     private File                        sourceFile;
@@ -82,11 +89,11 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     private TabPane                     destinationTabPane;
     private Button                      convertButton;
     private Button                      cancelButton;
-    private final LoggerBox             loggingArea       = new LoggerBox ();
-    private final TraversalManager      traversalManager  = new TraversalManager ();
+    private final LoggerBoxWeb          loggingArea            = new LoggerBoxWeb ();
+    private final TraversalManager      traversalManager       = new TraversalManager ();
 
-    private final ExecutorService       executor          = Executors.newSingleThreadExecutor ();
-    private Optional<ConversionTask>    conversionTaskOpt = Optional.empty ();
+    private final ExecutorService       executor               = Executors.newSingleThreadExecutor ();
+    private Optional<ConversionTask>    conversionTaskOpt      = Optional.empty ();
 
 
     /**
@@ -154,8 +161,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         final BorderPane sourcePane = new BorderPane ();
 
-        this.sourceFileField = new TextField ();
-        final BorderPane sourceFolderPanel = new BorderPane (this.sourceFileField);
+        final BorderPane sourceFolderPanel = new BorderPane (this.sourcePathField);
+        this.sourcePathField.setMaxWidth (Double.MAX_VALUE);
 
         this.sourceFileSelectButton = new Button (Functions.getText ("@IDS_MAIN_SELECT_SOURCE"));
         this.sourceFileSelectButton.setTooltip (new Tooltip (Functions.getText ("@IDS_MAIN_SELECT_SOURCE_TOOLTIP")));
@@ -164,7 +171,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         final BoxPanel sourceUpperPart = new BoxPanel (Orientation.VERTICAL);
         final TitledSeparator sourceTitle = new TitledSeparator (Functions.getText ("@IDS_MAIN_SOURCE_HEADER"));
-        sourceTitle.setLabelFor (this.sourceFileField);
+        sourceTitle.setLabelFor (this.sourcePathField);
         sourceUpperPart.addComponent (sourceTitle);
         sourceUpperPart.addComponent (sourceFolderPanel);
 
@@ -188,8 +195,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         final BorderPane destinationPane = new BorderPane ();
 
-        this.destinationPathField = new TextField ();
         final BorderPane destinationFolderPanel = new BorderPane (this.destinationPathField);
+        this.destinationPathField.setMaxWidth (Double.MAX_VALUE);
 
         this.destinationFolderSelectButton = new Button (Functions.getText ("@IDS_MAIN_SELECT_DESTINATION"));
         this.destinationFolderSelectButton.setTooltip (new Tooltip (Functions.getText ("@IDS_MAIN_SELECT_DESTINATION_TOOLTIP")));
@@ -238,7 +245,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         final BorderPane mainPane = new BorderPane ();
         mainPane.setTop (topPane);
-        final WebView webView = this.loggingArea.getWebView ();
+        final WebView webView = this.loggingArea.getComponent ();
         final StackPane stackPane = new StackPane (webView);
         stackPane.getStyleClass ().add ("padding");
         mainPane.setCenter (stackPane);
@@ -246,19 +253,19 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         this.setCenterNode (mainPane);
 
-        this.loadConfig ();
+        this.loadConfiguration ();
 
         this.updateTitle (null);
         this.updateButtonStates (false);
 
-        this.sourceFileField.requestFocus ();
+        this.sourcePathField.requestFocus ();
         this.configureTraversalManager ();
     }
 
 
     private void configureTraversalManager ()
     {
-        this.traversalManager.add (this.sourceFileField);
+        this.traversalManager.add (this.sourcePathField);
         this.traversalManager.add (this.sourceFileSelectButton);
         this.traversalManager.add (this.sourceTabPane);
         for (final Tab tab: this.sourceTabPane.getTabs ())
@@ -275,7 +282,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         this.traversalManager.add (this.cancelButton);
         this.traversalManager.add (this.convertButton);
 
-        this.traversalManager.add (this.loggingArea.getWebView ());
+        this.traversalManager.add (this.loggingArea.getComponent ());
         this.traversalManager.add (this.enableDarkMode);
 
         this.traversalManager.register (this.getStage ());
@@ -285,15 +292,33 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     /**
      * Load configuration settings.
      */
-    private void loadConfig ()
+    private void loadConfiguration ()
     {
-        final String sourcePath = this.config.getProperty (SOURCE_PATH);
-        if (sourcePath != null)
-            this.sourceFileField.setText (sourcePath);
+        for (int i = 0; i < NUMBER_OF_DIRECTORIES; i++)
+        {
+            final String sourcePath = this.config.getProperty (SOURCE_PATH + i);
+            if (sourcePath == null || sourcePath.isBlank ())
+                break;
+            if (!this.sourcePathHistory.contains (sourcePath))
+                this.sourcePathHistory.add (sourcePath);
+        }
+        this.sourcePathField.getItems ().addAll (this.sourcePathHistory);
+        this.sourcePathField.setEditable (true);
+        if (!this.sourcePathHistory.isEmpty ())
+            this.sourcePathField.getEditor ().setText (this.sourcePathHistory.get (0));
 
-        final String destinationPath = this.config.getProperty (DESTINATION_PATH);
-        if (destinationPath != null)
-            this.destinationPathField.setText (destinationPath);
+        for (int i = 0; i < NUMBER_OF_DIRECTORIES; i++)
+        {
+            final String destinationPath = this.config.getProperty (DESTINATION_PATH + i);
+            if (destinationPath == null || destinationPath.isBlank ())
+                break;
+            if (!this.destinationPathHistory.contains (destinationPath))
+                this.destinationPathHistory.add (destinationPath);
+        }
+        this.destinationPathField.getItems ().addAll (this.destinationPathHistory);
+        this.destinationPathField.setEditable (true);
+        if (!this.destinationPathHistory.isEmpty ())
+            this.destinationPathField.getEditor ().setText (this.destinationPathHistory.get (0));
 
         this.enableDarkMode.setSelected (this.config.getBoolean (ENABLE_DARK_MODE, false));
 
@@ -315,8 +340,24 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     {
         this.executor.shutdown ();
 
-        this.config.setProperty (SOURCE_PATH, this.sourceFileField.getText ());
-        this.config.setProperty (DESTINATION_PATH, this.destinationPathField.getText ());
+        this.saveConfiguration ();
+        // Store configuration
+        super.exit ();
+
+        Platform.exit ();
+    }
+
+
+    private void saveConfiguration ()
+    {
+        updateHistory (this.sourcePathField.getEditor ().getText (), this.sourcePathHistory);
+        for (int i = 0; i < NUMBER_OF_DIRECTORIES; i++)
+            this.config.setProperty (SOURCE_PATH + i, this.sourcePathHistory.size () > i ? this.sourcePathHistory.get (i) : "");
+
+        updateHistory (this.destinationPathField.getEditor ().getText (), this.destinationPathHistory);
+        for (int i = 0; i < NUMBER_OF_DIRECTORIES; i++)
+            this.config.setProperty (DESTINATION_PATH + i, this.destinationPathHistory.size () > i ? this.destinationPathHistory.get (i) : "");
+
         this.config.setBoolean (ENABLE_DARK_MODE, this.enableDarkMode.isSelected ());
 
         for (final ISourceFormat detector: this.sourceFormats)
@@ -328,11 +369,6 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         this.config.setInteger (SOURCE_TYPE, sourceSelectedIndex);
         final int destinationSelectedIndex = this.destinationTabPane.getSelectionModel ().getSelectedIndex ();
         this.config.setInteger (DESTINATION_TYPE, destinationSelectedIndex);
-
-        // Store configuration
-        super.exit ();
-
-        Platform.exit ();
     }
 
 
@@ -404,23 +440,23 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     private boolean verifyProjectFiles ()
     {
         // Check source file
-        final String sourceFileName = this.sourceFileField.getText ();
+        final String sourceFileName = this.sourcePathField.getEditor ().getText ();
         if (sourceFileName.isBlank ())
         {
             Functions.message ("@IDS_NOTIFY_SOURCE_NOT_SELECTED");
-            this.sourceFileField.requestFocus ();
+            this.sourcePathField.getEditor ().requestFocus ();
             return false;
         }
         this.sourceFile = new File (sourceFileName);
         if (!this.sourceFile.exists ())
         {
             Functions.message ("@IDS_NOTIFY_SOURCE_FILE_DOES_NOT_EXIST", this.sourceFile.getAbsolutePath ());
-            this.sourceFileField.requestFocus ();
+            this.sourcePathField.getEditor ().requestFocus ();
             return false;
         }
 
         // Check output folder
-        final String outputFolderName = this.destinationPathField.getText ();
+        final String outputFolderName = this.destinationPathField.getEditor ().getText ();
         if (outputFolderName.isBlank ())
         {
             Functions.message ("@IDS_NOTIFY_OUTPUT_FOLDER_NOT_SELECTED");
@@ -428,7 +464,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
             return false;
         }
         this.outputPath = new File (outputFolderName);
-        if (!this.outputPath.exists ())
+        if (!this.outputPath.exists () && !this.outputPath.mkdirs ())
         {
             Functions.message ("@IDS_NOTIFY_OUTPUT_FOLDER_DOES_NOT_EXIST", this.outputPath.getAbsolutePath ());
             this.destinationPathField.requestFocus ();
@@ -459,13 +495,13 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
             if (!stylesheets.contains (stylesheet))
             {
                 stylesheets.add (stylesheet);
-                this.loggingArea.getWebView ().setBlendMode (BlendMode.OVERLAY);
+                this.loggingArea.getComponent ().setBlendMode (BlendMode.OVERLAY);
             }
         }
         else
         {
             stylesheets.remove (stylesheet);
-            this.loggingArea.getWebView ().setBlendMode (BlendMode.DARKEN);
+            this.loggingArea.getComponent ().setBlendMode (BlendMode.DARKEN);
         }
     }
 
@@ -475,23 +511,27 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
      */
     private void selectSourceFile ()
     {
+        final File currentSourcePath = new File (this.sourcePathField.getEditor ().getText ());
+        if (currentSourcePath.exists () && currentSourcePath.isDirectory ())
+            this.config.setActivePath (currentSourcePath);
         final Optional<File> file = Functions.getFileFromUser (this.getStage (), true, "@IDS_MAIN_SELECT_SOURCE_HEADER", this.config, this.sourceExtensionFilters);
-        if (file.isEmpty ())
-            return;
-        final String absolutePath = file.get ().getAbsolutePath ();
-        this.sourceFileField.setText (absolutePath);
-
-        // Find the matching project tab, if any
-        for (int i = 1; i < this.sourceExtensionFilters.length; i++)
+        if (file.isPresent ())
         {
-            final ExtensionFilter filter = this.sourceExtensionFilters[i];
-            for (final String extension: filter.getExtensions ())
-                // Remove '*' and compare ending
-                if (absolutePath.endsWith (extension.substring (1)))
-                {
-                    this.sourceTabPane.getSelectionModel ().select (i - 1);
-                    return;
-                }
+            final String absolutePath = file.get ().getAbsolutePath ();
+            this.sourcePathField.getEditor ().setText (absolutePath);
+
+            // Find the matching project tab, if any
+            for (int i = 1; i < this.sourceExtensionFilters.length; i++)
+            {
+                final ExtensionFilter filter = this.sourceExtensionFilters[i];
+                for (final String extension: filter.getExtensions ())
+                    // Remove '*' and compare ending
+                    if (absolutePath.endsWith (extension.substring (1)))
+                    {
+                        this.sourceTabPane.getSelectionModel ().select (i - 1);
+                        return;
+                    }
+            }
         }
     }
 
@@ -501,9 +541,12 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
      */
     private void selectDestinationFolder ()
     {
-        final Optional<File> file = Functions.getFolderFromUser (this.getStage (), this.config, Functions.getText ("@IDS_MAIN_SELECT_DESTINATION_HEADER"));
+        final File currentDestinationPath = new File (this.destinationPathField.getEditor ().getText ());
+        if (currentDestinationPath.exists () && currentDestinationPath.isDirectory ())
+            this.config.setActivePath (currentDestinationPath);
+        final Optional<File> file = Functions.getFolderFromUser (this.getStage (), this.config, "@IDS_MAIN_SELECT_DESTINATION_HEADER");
         if (file.isPresent ())
-            this.destinationPathField.setText (file.get ().getAbsolutePath ());
+            this.destinationPathField.getEditor ().setText (file.get ().getAbsolutePath ());
     }
 
 
@@ -545,7 +588,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     {
         Platform.runLater ( () -> {
 
-            final WebView webView = this.loggingArea.getWebView ();
+            final WebView webView = this.loggingArea.getComponent ();
             this.cancelButton.setDisable (!isExecuting);
             this.convertButton.setDisable (isExecuting);
             if (!this.cancelButton.isDisabled ())
@@ -619,5 +662,12 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         // By default the display will originate from the center.
         // Applying a negative Y transformation will move it left.
         tabContainer.setTranslateY (-80);
+    }
+
+
+    private static void updateHistory (final String newItem, final List<String> history)
+    {
+        history.remove (newItem);
+        history.add (0, newItem);
     }
 }

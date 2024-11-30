@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2023
+// (c) 2021-2024
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.core;
@@ -52,7 +52,7 @@ public class TimeUtils
      */
     public static boolean updateIsBeats (final Timeline timeline, final boolean isBeats)
     {
-        return timeline.timeUnit == null ? isBeats : timeline.timeUnit == TimeUnit.beats;
+        return timeline.timeUnit == null ? isBeats : timeline.timeUnit == TimeUnit.BEATS;
     }
 
 
@@ -66,7 +66,7 @@ public class TimeUtils
      */
     public static boolean updateWarpsTimeIsBeats (final Warps warps, final boolean isBeats)
     {
-        return warps.contentTimeUnit == null ? isBeats : warps.contentTimeUnit == TimeUnit.beats;
+        return warps.contentTimeUnit == null ? isBeats : warps.contentTimeUnit == TimeUnit.BEATS;
     }
 
 
@@ -78,9 +78,9 @@ public class TimeUtils
      * @param isBeats The current setting, true if set to Beats
      * @return True if beats otherwise seconds
      */
-    public static boolean updateClipTimeIsBeats (final Clip clip, final boolean isBeats)
+    public static boolean updateClipContentTimeIsBeats (final Clip clip, final boolean isBeats)
     {
-        return clip.contentTimeUnit == null ? isBeats : clip.contentTimeUnit == TimeUnit.beats;
+        return clip.contentTimeUnit == null ? isBeats : clip.contentTimeUnit == TimeUnit.BEATS;
     }
 
 
@@ -92,22 +92,33 @@ public class TimeUtils
      */
     public static void setTimeUnit (final Timeline timeline, final boolean isBeats)
     {
-        timeline.timeUnit = isBeats ? TimeUnit.beats : TimeUnit.seconds;
+        timeline.timeUnit = isBeats ? TimeUnit.BEATS : TimeUnit.SECONDS;
     }
 
 
     /**
-     * Get the duration of the clip. If duration is not set it is calculated from the play start and
-     * stop.
+     * Get the duration of the clip.
      *
      * @param clip The clip
-     * @return The duration
+     * @return The duration or -1 if not set
      */
     public static double getDuration (final Clip clip)
     {
-        if (clip.duration == null)
-            return clip.playStop.doubleValue () - (clip.playStart == null ? 0 : clip.playStart.doubleValue ());
-        return clip.duration.doubleValue ();
+        return clip.duration == null ? -1 : clip.duration.doubleValue ();
+    }
+
+
+    /**
+     * Get the length of the play start to end of the clip.
+     *
+     * @param clip The clip
+     * @return The duration of the play range
+     */
+    public static double getPlayRange (final Clip clip)
+    {
+        if (clip.playStop == null)
+            return -1;
+        return clip.playStop.doubleValue () - (clip.playStart == null ? 0 : clip.playStart.doubleValue ());
     }
 
 

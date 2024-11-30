@@ -49,24 +49,26 @@ The Reaper source has an option to not add audio files to the DAWproject file an
 
 The following data can currently be converted between the 2 formats.
 
-**Metadata**
+### Metadata
 
-* Project comment and author field; other info taken/written from/to export ID3 tags
+* Project comment and author field
+* Project render metadata
+* ID3 tags
 
-**Project**
+###  Transport
 
 * Time-base seconds or beats
 * Tempo and signature
 
-**Markers**
+### Markers
 
-* Name
 * Position
+* Name
 * Color
 
 Range markers are not supported.
 
-**Master Track**
+### Master Track
 
 * Number of audio channels
 * Volume
@@ -75,63 +77,83 @@ Range markers are not supported.
 * Solo
 * Color
 
-**Tracks**
+### Tracks
 
 * Folder structure
 * Track type - MIDI and audio, AUX if it has receives
-* Active state - Reaper has no active state for tracks, instead the track controls are set to locked and all plugins of the track are set to offline.
+* Active state - Reaper has no active state for tracks, instead the track controls are set to locked and all plug-ins of the track are set to offline.
 * Number of audio channels
 * Volume
 * Panorama
 * Mute
 * Solo
 * Color
+* Sends
+	* Enable
+  * Volume
+  * Panorama
+  * Type (post/pre)
+* Devices
 
-**Device**
+### Device
 
 * VST 2, VST 3 and CLAP devices with their state
 * Enabled (bypass)
 * Loaded (offline)
+* Name
+* Vendor
+* ID
+* Role (Instrument, Audio FX)
 
-**Items**
+### Items
 
 * Name
 * Position
+* Duration
 * Fade in, fade out
+* Comment
+* Loop Start/End
 
-**MIDI Items**
+### MIDI Items
 
-* Notes
-* Polyphonic / Channel Aftertouch
-* Continuous Controller (CC)
-* Program Change
-* Pitch Bend
+* Notes (position, duration, key, velocity, release velocity)
+* Envelopes (only from Reaper to DAWproject)
+	* Polyphonic / Channel Aftertouch
+	* Continuous Controller (CC)
+	* Program Change
+	* Pitch Bend
 
-**Audio Items**
+### Audio Items
 
+* Type: WAVE or FLAC
 * The sample
+* Playrate
 
-**Automation**
+### Automation
 
-* Project tempo
-* Project signature
-* Track volume
-* Track panorama
-* Track mute
+* Master Track
+	* Tempo
+	* Signature
+	* Volume
+	* Panorama
+* Track
+	* volume
+	* Panorama
+	* Mute
 
 ### Known Issues
 
 * No clips in clips in Reaper: nested clips in a DAWproject are tried to be *flattened*, this might cause issues.
 * Same for fades which are not on the top level. As a workaround consolidate all clips before export.
 * Currently, the following features of the DAWproject format are not supported:
-   * Built-in devices.
-   * AU plugins.
-   * Video clips.
-   * Panorama on sends (including modulation envelope).
-   * VST parameter envelopes.
-   * MIDI parameter envelopes.
-   * Complex routings (beyond normal sends).
-   * Continuous tempo changes.
+	* Built-in devices.
+	* AU plugins.
+	* Video clips.
+	* Modulation envelope on Panorama on sends.
+	* VST parameter envelopes.
+	* MIDI parameter envelopes.
+	* Complex routings (beyond normal sends).
+	* Continuous tempo changes.
 
 
 <div style="page-break-after: always; visibility: hidden"> 
@@ -139,6 +161,19 @@ Range markers are not supported.
 </div>
 
 ## Changes
+
+### 1.2.9
+
+* New: Support for FLAC files.
+* New: Source project file and destination path stores now the last 20 selections.
+* New: Create output folder automatically if it does not exist.
+* New: Support for Send parameters enable and panorama.
+* DAWproject to Reaper
+	* Fixed: DAWproject file with mixed beat and seconds time units might have wrong positions and lengths.
+	* Fixed: Several fixes to positioning and offsets for complex wrapped clips.
+	* Fixed: Devices were missing on group tracks.
+* Reaper to DAWproject
+	* New: Support for linear time changes (but does currently not work in any other DAW).
 
 ### 1.2.8
 

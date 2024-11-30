@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2023
+// (c) 2021-2024
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 /**
@@ -16,11 +16,11 @@ module de.mossgrabers.projectconverter
     requires transitive javafx.web;
     requires transitive java.xml;
     requires transitive de.mossgrabers.uitools;
+    requires com.github.trilarion.sound;
 
     requires javafx.graphics;
     requires transitive com.bitwig.dawproject;
     requires jakarta.xml.bind;
-    requires vorbis.java.core;
 
 
     exports de.mossgrabers.projectconverter;

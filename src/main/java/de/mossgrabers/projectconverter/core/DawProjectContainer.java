@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2023
+// (c) 2021-2024
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.core;
@@ -16,7 +16,7 @@ import de.mossgrabers.tools.FileUtils;
 
 
 /**
- * A container for all dawproject components: metadata, project and embedded files.
+ * A container for all DAWproject components: metadata, project and embedded files.
  *
  * @author Jürgen Moßgraber
  */
@@ -110,9 +110,9 @@ public class DawProjectContainer implements Closeable
      *
      * @return The beats per second
      */
-    public double getBeatsPerSecond ()
+    public double getTempo ()
     {
-        return this.project.transport.tempo.value.doubleValue () / 60.0;
+        return this.project.transport.tempo.value.doubleValue ();
     }
 
 

@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2023
+// (c) 2021-2024
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.format.dawproject;
@@ -111,7 +111,6 @@ public class DawProjectCreator extends AbstractCoreTask implements IDestinationF
             this.replaceArrangementClips (dawProject.getProject ());
 
         final File outputFile = getFile (dawProject.getName (), outputPath);
-        final IMediaFiles mediaFiles = dawProject.getMediaFiles ();
 
         final String metadataXML = toXML (dawProject.getMetadata ());
         final String projectXML = toXML (dawProject.getProject ());
@@ -119,7 +118,7 @@ public class DawProjectCreator extends AbstractCoreTask implements IDestinationF
         if (this.notifier.isCancelled ())
             return;
 
-        try (final ZipOutputStream zos = new ZipOutputStream (new FileOutputStream (outputFile)))
+        try (final ZipOutputStream zos = new ZipOutputStream (new FileOutputStream (outputFile)); final IMediaFiles mediaFiles = dawProject.getMediaFiles ())
         {
             addToZip (zos, METADATA_FILE, metadataXML.getBytes (StandardCharsets.UTF_8));
             addToZip (zos, PROJECT_FILE, projectXML.getBytes (StandardCharsets.UTF_8));

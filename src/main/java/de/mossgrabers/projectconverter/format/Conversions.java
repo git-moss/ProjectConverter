@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2021-2023
+// (c) 2021-2024
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.projectconverter.format;
@@ -21,71 +21,16 @@ public class Conversions
 
 
     /**
-     * Convert the time value to beats.
-     *
-     * @param beatsPerSecond Beats per second
-     * @param value The value in time (seconds)
-     * @return The value in beats
-     */
-    public static double toBeats (final double beatsPerSecond, final double value)
-    {
-        return value * beatsPerSecond;
-    }
-
-
-    /**
-     * Convert the time value to beats.
-     *
-     * @param timeInSeconds The value in time
-     * @param tempo The tempo
-     * @return The value in beats
-     */
-    public static double toTempoBeats (final double timeInSeconds, final Double tempo)
-    {
-        final double beatsPerSecond = tempo.doubleValue () / 60.0;
-        return beatsPerSecond * timeInSeconds;
-    }
-
-
-    /**
-     * Convert the beats value to time.
-     *
-     * @param valueInBeatsPerSecond The value in beats
-     * @param beatsPerSecond Beats per second
-     *
-     * @return The value in time
-     */
-    public static double toTime (final double valueInBeatsPerSecond, final double beatsPerSecond)
-    {
-        return valueInBeatsPerSecond / beatsPerSecond;
-    }
-
-
-    /**
-     * Convert the beats value to time. The beats per second are calculated from the given tempo.
-     *
-     * @param valueInBeatsPerSecond The value in beats
-     * @param tempo The tempo
-     * @return The value in time
-     */
-    public static double toTempoTime (final double valueInBeatsPerSecond, final Double tempo)
-    {
-        final double beatsPerSecond = tempo.doubleValue () / 60.0;
-        return toTime (valueInBeatsPerSecond, beatsPerSecond);
-    }
-
-
-    /**
      * Converts a dB value to linear value.
      *
-     * @param dbValue The dB value to convert
+     * @param valueDb The dB value to convert
      * @param maxLevelDB The maximum possible dB value
      * @return The linear value
      */
-    public static double dBToValue (final double dbValue, final double maxLevelDB)
+    public static double dBToValue (final double valueDb, final double maxLevelDB)
     {
-        final double linearValue = dbToLinear (dbValue);
-        return 20 * Math.log10 (linearValue) + maxLevelDB;
+        final double dbValue = 20 * Math.log10 (valueDb) + maxLevelDB;
+        return dbToLinear (dbValue);
     }
 
 
