@@ -400,7 +400,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         }
 
         if (!cueMarkers.markers.isEmpty ())
-            dawProject.getProject ().arrangement.lanes.lanes.add (cueMarkers);
+            dawProject.getProject ().arrangement.markers = cueMarkers;
     }
 
 
@@ -639,7 +639,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         // Convert all FX devices
         channel.devices = this.convertDevices (mediaFilesMap, track, trackChunk, ReaperTags.CHUNK_FXCHAIN, folderStructure);
 
-        final Set<ContentType> trackTypes = this.convertItems (dawProject, mediaFilesMap, trackLanes, trackChunk, sourcePath, beatsAndTime);
+        final Set<ContentType> trackTypes = this.convertClips (dawProject, mediaFilesMap, trackLanes, trackChunk, sourcePath, beatsAndTime);
 
         if (auxReceive.isEmpty ())
         {
@@ -1043,7 +1043,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @return The type of converted clips
      * @throws ParseException Could not parse the track info
      */
-    private Set<ContentType> convertItems (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
+    private Set<ContentType> convertClips (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final Set<ContentType> contentTypes = new HashSet<> ();
 
@@ -1059,7 +1059,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
             if (node instanceof final Chunk itemChunk)
             {
-                final Clip clip = this.handleClip (dawProject, mediaFilesMap, itemChunk, sourcePath, beatsAndTime, contentTypes);
+                final Clip clip = this.convertClip (dawProject, mediaFilesMap, itemChunk, sourcePath, beatsAndTime, contentTypes);
                 if (clip != null)
                     clips.clips.add (clip);
             }
@@ -1091,7 +1091,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @return The clip
      * @throws ParseException Could not parse a clip
      */
-    private Clip handleClip (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime, final Set<ContentType> contentTypes) throws ParseException
+    private Clip convertClip (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime, final Set<ContentType> contentTypes) throws ParseException
     {
         final Clip clip = new Clip ();
 
@@ -1102,6 +1102,10 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         {
             double clipPosition = getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0);
             double clipDuration = getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1);
+
+            final boolean clipMute = getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_MUTE), 0) > 0;
+            if (clipMute)
+                clip.enable = Boolean.FALSE;
 
             clip.name = getParam (itemChunk.getChildNode (ReaperTags.ITEM_NAME), null);
             clip.time = handleTime (beatsAndTime, clipPosition, false);
@@ -1201,7 +1205,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @return The end of the MIDI events
      * @throws ParseException Could not parse the notes
      */
-    private static double convertMIDI (final DawProjectContainer dawProject, final Chunk sourceChunk, final Lanes lanes, final BeatsAndTime beatsAndTime) throws ParseException
+    private double convertMIDI (final DawProjectContainer dawProject, final Chunk sourceChunk, final Lanes lanes, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final Notes notes = new Notes ();
         lanes.lanes.add (notes);
@@ -1237,7 +1241,10 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
                 case 0x80:
                     final ReaperMidiEvent noteStart = findNoteStart (noteStarts, midiEvent);
                     if (noteStart == null)
-                        throw new ParseException ("Malformed MIDI events in MIDI source section. End note without start note.", 0);
+                    {
+                        this.notifier.logError ("IDS_NOTIFY_ERR_NO_END_NOTE", Integer.toString (midiEvent.getData1 ()), Integer.toString (midiEvent.getData2 ()));
+                        continue;
+                    }
                     noteStarts.remove (noteStart);
 
                     final Note note = new Note ();

@@ -55,6 +55,7 @@ public class ReaperTags
 
     protected static final String    CHUNK_ITEM                 = "ITEM";
     protected static final String    ITEM_NAME                  = "NAME";
+    protected static final String    ITEM_MUTE                  = "MUTE";
     protected static final String    ITEM_NOTES                 = "NOTES";
     protected static final String    ITEM_POSITION              = "POSITION";
     protected static final String    ITEM_LENGTH                = "LENGTH";

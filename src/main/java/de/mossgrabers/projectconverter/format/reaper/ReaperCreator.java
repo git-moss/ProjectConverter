@@ -771,18 +771,18 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
      * @param parentClip Some aggregated info about the parent clip(s)
      * @param parameters The parameters
      */
-    private void convertItems (final Chunk trackChunk, final Track track, final Clips clips, final ParentClip parentClip, final Parameters parameters)
+    private void convertClips (final Chunk trackChunk, final Track track, final Clips clips, final ParentClip parentClip, final Parameters parameters)
     {
         if (clips.clips == null)
             return;
 
         final boolean clipsIsBeats = TimeUtils.updateIsBeats (clips, parentClip.sourceIsBeats);
         for (final Clip clip: clips.clips)
-            this.convertItem (trackChunk, track, clip, parentClip, parameters, clipsIsBeats);
+            this.convertClip (trackChunk, track, clip, parentClip, parameters, clipsIsBeats);
     }
 
 
-    private void convertItem (final Chunk trackChunk, final Track track, final Clip clip, final ParentClip parentClip, final Parameters parameters, final boolean clipsIsBeats)
+    private void convertClip (final Chunk trackChunk, final Track track, final Clip clip, final ParentClip parentClip, final Parameters parameters, final boolean clipsIsBeats)
     {
         final Double tempo = parameters.tempo;
         final boolean destinationIsBeats = parameters.destinationIsBeats;
@@ -807,6 +807,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         {
             final ParentClip innerParentClip = new ParentClip ();
             innerParentClip.comment = clip.comment;
+            innerParentClip.mute = clip.enable != null && !clip.enable.booleanValue ();
 
             // Harmonize all time based values to the destination
             innerParentClip.sourceIsBeats = clipContentIsBeats;
@@ -822,7 +823,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             innerParentClip.loopStart = clip.loopStart == null ? 0 : handleTime (clip.loopStart.doubleValue (), clipContentIsBeats, destinationIsBeats, tempo);
             innerParentClip.loopEnd = clip.loopEnd == null ? -1 : handleTime (clip.loopEnd.doubleValue (), clipContentIsBeats, destinationIsBeats, tempo);
 
-            this.convertItems (trackChunk, track, groupedClips, innerParentClip, parameters);
+            this.convertClips (trackChunk, track, groupedClips, innerParentClip, parameters);
             return;
         }
 
@@ -855,7 +856,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
 
         final Double fadeIn = handleTime (clip.fadeInTime, destinationIsBeats, parameters);
         final Double fadeOut = handleTime (clip.fadeOutTime, destinationIsBeats, parameters);
-        final Chunk itemChunk = createClipChunk (trackChunk, clip.name, start, clipDuration, offset, fadeIn, fadeOut);
+        final Chunk itemChunk = createClipChunk (trackChunk, clip.name, start, clipDuration, offset, fadeIn, fadeOut, parentClip.mute || (clip.enable != null && !clip.enable.booleanValue ()));
 
         if (parentClip.comment != null && !parentClip.comment.isBlank ())
             createNotesChunk (itemChunk, parentClip.comment, ReaperTags.PROJECT_NOTES);
@@ -910,16 +911,19 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
 
             final Double fadeIn = handleTime (clip.fadeInTime, isBeats, parameters);
             final Double fadeOut = handleTime (clip.fadeOutTime, isBeats, parameters);
-            itemChunk = createClipChunk (trackChunk, clip.name, start, duration, clipOffset, fadeIn, fadeOut);
+            itemChunk = createClipChunk (trackChunk, clip.name, start, duration, clipOffset, fadeIn, fadeOut, parentClip.mute || (clip.enable != null && !clip.enable.booleanValue ()));
         }
     }
 
 
-    private static Chunk createClipChunk (final Chunk trackChunk, final String clipName, final double start, final double duration, final double offset, final Double fadeIn, final Double fadeOut)
+    private static Chunk createClipChunk (final Chunk trackChunk, final String clipName, final double start, final double duration, final double offset, final Double fadeIn, final Double fadeOut, final boolean mute)
     {
         final Chunk itemChunk = addChunk (trackChunk, ReaperTags.CHUNK_ITEM);
         if (clipName != null)
             addNode (itemChunk, ReaperTags.ITEM_NAME, clipName);
+        if (mute)
+            addNode (itemChunk, ReaperTags.ITEM_MUTE, "1");
+
         addNode (itemChunk, ReaperTags.ITEM_POSITION, Double.toString (start));
         addNode (itemChunk, ReaperTags.ITEM_LENGTH, Double.toString (duration));
         addNode (itemChunk, ReaperTags.ITEM_SAMPLE_OFFSET, Double.toString (offset));
@@ -1124,6 +1128,9 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         if (project.arrangement == null || project.arrangement.lanes == null)
             return;
 
+        if (project.arrangement.markers != null)
+            this.convertMarkers (rootChunk, parameters, project.arrangement.markers, arrangementIsBeats);
+
         for (final Timeline timeline: project.arrangement.lanes.lanes)
             if (timeline instanceof final Markers markers && markers.markers != null)
                 this.convertMarkers (rootChunk, parameters, markers, arrangementIsBeats);
@@ -1178,7 +1185,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
                     final double duration = TimeUtils.getDuration (clip);
                     for (double pos = 0; pos < maxDuration; pos += duration)
                     {
-                        this.convertItem (trackChunk, track, clip, parentClip, parameters, isBeats);
+                        this.convertClip (trackChunk, track, clip, parentClip, parameters, isBeats);
                         clip.time += duration;
                     }
                 }
@@ -1240,7 +1247,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             {
                 final ParentClip parentClip = new ParentClip ();
                 parentClip.valuesIsBeats = timelineIsBeats;
-                this.convertItems (trackChunk, track, clips, parentClip, parameters);
+                this.convertClips (trackChunk, track, clips, parentClip, parameters);
             }
             else if (trackTimeline instanceof final Warps warps)
                 this.convertWarps (rootOrItemChunk, parameters, warps, arrangementIsBeats);
@@ -1729,6 +1736,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         boolean valuesIsBeats = true;
 
         String  comment;
+        boolean mute;
         // The start of the loop
         double  loopEnd;
         // The end of the loop

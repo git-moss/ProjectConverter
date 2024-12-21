@@ -162,6 +162,13 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.10
+
+* New: Support enable state (mute) of clips.
+* New: Moved markers from Lanes to Arrangement to be compatible with Studio One.
+* Fixed: Continue conversion when end notes without start notes are found.
+
+
 ### 1.2.9
 
 * New: Support for FLAC files.
