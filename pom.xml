@@ -7,8 +7,7 @@
 	<artifactId>projectconverter</artifactId>
 	<version>1.2.10</version>
 	<name>ProjectConverter</name>
-	<description>Convert from/to a specific DAW project format to/from generic
-		dawproject</description>
+	<description>Convert from/to a specific DAW project format to/from generic dawproject</description>
 	<organization>
 		<name>Jürgen Moßgraber</name>
 		<url>http://www.mossgrabers.de</url>
@@ -35,17 +34,12 @@
 		<dependency>
 			<groupId>org.openjfx</groupId>
 			<artifactId>javafx-controls</artifactId>
-			<version>23.0.1</version>
-		</dependency>
-		<dependency>
-			<groupId>org.openjfx</groupId>
-			<artifactId>javafx-web</artifactId>
-			<version>23.0.1</version>
+			<version>23.0.2</version>
 		</dependency>
 		<dependency>
 			<artifactId>uitools</artifactId>
 			<groupId>de.mossgrabers</groupId>
-			<version>1.5.2</version>
+			<version>1.6.0</version>
 		</dependency>
 		<dependency>
 			<groupId>com.bitwig.open</groupId>

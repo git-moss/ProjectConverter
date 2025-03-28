@@ -20,9 +20,9 @@
 
 .horizontal-tab-pane *.tab {
 	/* Determines the tab height */
-	-fx-pref-width: 50px; 
+	-fx-pref-width: 30px; 
 	/* Everything else is just aesthetics */
-	-fx-padding: 20px;
+	-fx-padding: 12px;
 	-fx-background-insets: 2 -1 -1 -1;
 	-fx-border-width: 1 0 1 1;
 	-fx-border-color: rgb(55, 55, 56) black black black;
@@ -96,4 +96,24 @@
 .flat-button {
     -fx-background-color: transparent;
     -fx-padding: 0.0;
+}
+
+/*********************
+ * Log View
+**********************/
+
+.log-view {
+	-fx-font-family: 'monospace';
+	-fx-font-size: 1.5em;	
+}
+
+.log-view .list-cell:selected {
+	-fx-background-color: -fx-focus-color;
+}
+
+.log-view .list-cell:info {
+}
+
+.log-view .list-cell:error {
+    -fx-text-fill: red;
 }

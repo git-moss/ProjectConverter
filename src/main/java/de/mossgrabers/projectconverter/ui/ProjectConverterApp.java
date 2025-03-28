@@ -6,6 +6,8 @@ package de.mossgrabers.projectconverter.ui;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -26,8 +28,9 @@ import de.mossgrabers.tools.ui.DefaultApplication;
 import de.mossgrabers.tools.ui.EndApplicationException;
 import de.mossgrabers.tools.ui.Functions;
 import de.mossgrabers.tools.ui.TraversalManager;
-import de.mossgrabers.tools.ui.control.LoggerBoxWeb;
 import de.mossgrabers.tools.ui.control.TitledSeparator;
+import de.mossgrabers.tools.ui.control.loggerbox.LoggerBox;
+import de.mossgrabers.tools.ui.control.loggerbox.LoggerBoxLogger;
 import de.mossgrabers.tools.ui.panel.BasePanel;
 import de.mossgrabers.tools.ui.panel.BoxPanel;
 import de.mossgrabers.tools.ui.panel.ButtonPanel;
@@ -51,7 +54,6 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
-import javafx.scene.web.WebView;
 import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
 
@@ -63,22 +65,23 @@ import javafx.stage.Stage;
  */
 public class ProjectConverterApp extends AbstractFrame implements INotifier
 {
-    private static final int            NUMBER_OF_DIRECTORIES  = 20;
+    private static final int            NUMBER_OF_DIRECTORIES         = 20;
+    private static final int            MAXIMUM_NUMBER_OF_LOG_ENTRIES = 100000;
 
-    private static final String         ENABLE_DARK_MODE       = "EnableDarkMode";
-    private static final String         DESTINATION_PATH       = "DestinationPath";
-    private static final String         DESTINATION_TYPE       = "DestinationType";
-    private static final String         SOURCE_PATH            = "SourcePath";
-    private static final String         SOURCE_TYPE            = "SourceType";
+    private static final String         ENABLE_DARK_MODE              = "EnableDarkMode";
+    private static final String         DESTINATION_PATH              = "DestinationPath";
+    private static final String         DESTINATION_TYPE              = "DestinationType";
+    private static final String         SOURCE_PATH                   = "SourcePath";
+    private static final String         SOURCE_TYPE                   = "SourceType";
 
     private final ISourceFormat []      sourceFormats;
     private final IDestinationFormat [] destinationFormats;
     private final ExtensionFilter []    sourceExtensionFilters;
 
-    private final ComboBox<String>      sourcePathField        = new ComboBox<> ();
-    private final ComboBox<String>      destinationPathField   = new ComboBox<> ();
-    private final List<String>          sourcePathHistory      = new ArrayList<> ();
-    private final List<String>          destinationPathHistory = new ArrayList<> ();
+    private final ComboBox<String>      sourcePathField               = new ComboBox<> ();
+    private final ComboBox<String>      destinationPathField          = new ComboBox<> ();
+    private final List<String>          sourcePathHistory             = new ArrayList<> ();
+    private final List<String>          destinationPathHistory        = new ArrayList<> ();
 
     private Button                      sourceFileSelectButton;
     private Button                      destinationFolderSelectButton;
@@ -89,11 +92,13 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     private TabPane                     destinationTabPane;
     private Button                      convertButton;
     private Button                      cancelButton;
-    private final LoggerBoxWeb          loggingArea            = new LoggerBoxWeb ();
-    private final TraversalManager      traversalManager       = new TraversalManager ();
+    private final LoggerBoxLogger       logger                        = new LoggerBoxLogger (MAXIMUM_NUMBER_OF_LOG_ENTRIES);
+    private final LoggerBox             loggingArea                   = new LoggerBox (this.logger);
+    private boolean                     combineWithPreviousMessage    = false;
+    private final TraversalManager      traversalManager              = new TraversalManager ();
 
-    private final ExecutorService       executor               = Executors.newSingleThreadExecutor ();
-    private Optional<ConversionTask>    conversionTaskOpt      = Optional.empty ();
+    private final ExecutorService       executor                      = Executors.newSingleThreadExecutor ();
+    private Optional<ConversionTask>    conversionTaskOpt             = Optional.empty ();
 
 
     /**
@@ -245,8 +250,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         final BorderPane mainPane = new BorderPane ();
         mainPane.setTop (topPane);
-        final WebView webView = this.loggingArea.getComponent ();
-        final StackPane stackPane = new StackPane (webView);
+        final StackPane stackPane = new StackPane (this.loggingArea);
         stackPane.getStyleClass ().add ("padding");
         mainPane.setCenter (stackPane);
         mainPane.setBottom (optionsPanel.getPane ());
@@ -282,7 +286,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         this.traversalManager.add (this.cancelButton);
         this.traversalManager.add (this.convertButton);
 
-        this.traversalManager.add (this.loggingArea.getComponent ());
+        this.traversalManager.add (this.loggingArea);
         this.traversalManager.add (this.enableDarkMode);
 
         this.traversalManager.register (this.getStage ());
@@ -495,13 +499,13 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
             if (!stylesheets.contains (stylesheet))
             {
                 stylesheets.add (stylesheet);
-                this.loggingArea.getComponent ().setBlendMode (BlendMode.OVERLAY);
+                this.loggingArea.setBlendMode (BlendMode.OVERLAY);
             }
         }
         else
         {
             stylesheets.remove (stylesheet);
-            this.loggingArea.getComponent ().setBlendMode (BlendMode.DARKEN);
+            this.loggingArea.setBlendMode (BlendMode.DARKEN);
         }
     }
 
@@ -554,7 +558,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     @Override
     public void log (final String messageID, final String... replaceStrings)
     {
-        this.loggingArea.notify (Functions.getMessage (messageID, replaceStrings));
+        this.logText (Functions.getMessage (messageID, replaceStrings));
     }
 
 
@@ -562,7 +566,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     @Override
     public void logError (final String messageID, final String... replaceStrings)
     {
-        this.loggingArea.notifyError (Functions.getMessage (messageID, replaceStrings));
+        this.logErrorText (Functions.getMessage (messageID, replaceStrings));
     }
 
 
@@ -570,7 +574,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     @Override
     public void logError (final String messageID, final Throwable throwable)
     {
-        this.loggingArea.notifyError (Functions.getMessage (messageID, throwable));
+        this.logErrorText (Functions.getMessage (messageID, throwable));
     }
 
 
@@ -578,7 +582,39 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     @Override
     public void logError (final Throwable throwable)
     {
-        this.loggingArea.notifyError (throwable.getMessage (), throwable);
+        this.logError (throwable, true);
+    }
+
+
+    private void logError (final Throwable throwable, final boolean logExceptionStack)
+    {
+        String message = throwable.getMessage ();
+        if (message == null)
+            message = throwable.getClass ().getName ();
+        if (logExceptionStack)
+        {
+            final StringBuilder sb = new StringBuilder (message).append ('\n');
+            final StringWriter sw = new StringWriter ();
+            final PrintWriter pw = new PrintWriter (sw);
+            throwable.printStackTrace (pw);
+            sb.append (sw.toString ()).append ('\n');
+            message = sb.toString ();
+        }
+        this.logErrorText (message);
+    }
+
+
+    private void logErrorText (final String message)
+    {
+        this.logger.error (message);
+    }
+
+
+    private void logText (final String text)
+    {
+        final boolean combine = this.combineWithPreviousMessage;
+        this.combineWithPreviousMessage = !text.endsWith ("\n");
+        this.logger.info (text, combine);
     }
 
 
@@ -588,20 +624,19 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     {
         Platform.runLater ( () -> {
 
-            final WebView webView = this.loggingArea.getComponent ();
             this.cancelButton.setDisable (!isExecuting);
             this.convertButton.setDisable (isExecuting);
             if (!this.cancelButton.isDisabled ())
             {
                 this.cancelButton.setDefaultButton (true);
                 this.cancelButton.requestFocus ();
-                webView.setAccessibleText (Functions.getMessage ("IDS_NOTIFY_PROCESSING"));
+                this.loggingArea.setAccessibleText (Functions.getMessage ("IDS_NOTIFY_PROCESSING"));
             }
             else
             {
                 this.convertButton.setDefaultButton (true);
                 this.convertButton.requestFocus ();
-                webView.setAccessibleText (Functions.getMessage ("IDS_NOTIFY_FINISHED"));
+                this.loggingArea.setAccessibleText (Functions.getMessage ("IDS_NOTIFY_FINISHED"));
             }
 
         });

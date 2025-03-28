@@ -162,6 +162,10 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.11 (unreleased)
+
+* New: Implemented a new logging component. Much faster and does not crash anymore.
+
 ### 1.2.10
 
 * New: Support enable state (mute) of clips.
