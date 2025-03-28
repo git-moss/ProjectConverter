@@ -4,28 +4,24 @@
 
 package de.mossgrabers.projectconverter.format.reaper;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.UUID;
+import de.mossgrabers.projectconverter.INotifier;
+import de.mossgrabers.projectconverter.core.AbstractCoreTask;
+import de.mossgrabers.projectconverter.core.DawProjectContainer;
+import de.mossgrabers.projectconverter.core.IDestinationFormat;
+import de.mossgrabers.projectconverter.core.IMediaFiles;
+import de.mossgrabers.projectconverter.core.TempoConverter;
+import de.mossgrabers.projectconverter.core.TimeUtils;
+import de.mossgrabers.projectconverter.format.Conversions;
+import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
+import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
+import de.mossgrabers.projectconverter.format.reaper.model.Node;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
+import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
+import de.mossgrabers.tools.ExecutionTimer;
+import de.mossgrabers.tools.ui.BasicConfig;
+import de.mossgrabers.tools.ui.Functions;
+import de.mossgrabers.tools.ui.panel.BoxPanel;
 
 import com.bitwig.dawproject.BoolParameter;
 import com.bitwig.dawproject.Channel;
@@ -67,29 +63,34 @@ import com.bitwig.dawproject.timeline.Timeline;
 import com.bitwig.dawproject.timeline.Warp;
 import com.bitwig.dawproject.timeline.Warps;
 
-import de.mossgrabers.projectconverter.INotifier;
-import de.mossgrabers.projectconverter.core.AbstractCoreTask;
-import de.mossgrabers.projectconverter.core.DawProjectContainer;
-import de.mossgrabers.projectconverter.core.IDestinationFormat;
-import de.mossgrabers.projectconverter.core.IMediaFiles;
-import de.mossgrabers.projectconverter.core.TempoConverter;
-import de.mossgrabers.projectconverter.core.TimeUtils;
-import de.mossgrabers.projectconverter.format.Conversions;
-import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
-import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
-import de.mossgrabers.projectconverter.format.reaper.model.Node;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
-import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
-import de.mossgrabers.tools.ExecutionTimer;
-import de.mossgrabers.tools.ui.BasicConfig;
-import de.mossgrabers.tools.ui.Functions;
-import de.mossgrabers.tools.ui.panel.BoxPanel;
 import javafx.collections.ObservableList;
 import javafx.geometry.Orientation;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleGroup;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.UUID;
 
 
 /**
@@ -117,7 +118,6 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         AUDIO_FILE_TYPES.put ("flac", "FLAC");
     }
 
-
     /** Helper structure to create a flat track list. */
     private static class TrackInfo
     {
@@ -127,9 +127,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         int   direction = 0;
     }
 
-
     private ToggleGroup arrangementOrScenesGroup;
-
 
     /**
      * Constructor.
@@ -1032,6 +1030,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
      * @param clip The clip to convert
      * @param notes The notes of the clip
      * @param clipDuration The duration of the clip
+     * @param clipDurationIsBeats True if the clip duration time is in beats otherwise in seconds
      * @param clipContentIsBeats True if the time is in beats otherwise in seconds
      */
     private static void convertMIDI (final Chunk itemChunk, final Double tempo, final Clip clip, final Notes notes, final double clipDuration, final boolean clipDurationIsBeats, final boolean clipContentIsBeats)
@@ -1713,7 +1712,6 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         return parameter.value == null ? defaultValue : parameter.value.booleanValue ();
     }
 
-
     private static class Parameters
     {
         private Points                    tempoEnvelope;
@@ -1728,7 +1726,6 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         private final Map<Channel, Track> channelMapping = new HashMap<> ();
         private final Map<Track, Integer> trackMapping   = new HashMap<> ();
     }
-
 
     private static class ParentClip
     {
@@ -1747,7 +1744,6 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         double  duration      = -1;
         // An offset to the play start in the clip
         double  offset        = 0;
-
 
         public double getPosition (final boolean destinationIsBeats, final Double tempo)
         {

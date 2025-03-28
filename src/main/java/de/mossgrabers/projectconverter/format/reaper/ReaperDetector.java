@@ -4,32 +4,26 @@
 
 package de.mossgrabers.projectconverter.format.reaper;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.text.ParseException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Deque;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import javax.sound.sampled.AudioFileFormat;
-import javax.sound.sampled.AudioFileFormat.Type;
-import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.UnsupportedAudioFileException;
+import de.mossgrabers.projectconverter.INotifier;
+import de.mossgrabers.projectconverter.core.AbstractCoreTask;
+import de.mossgrabers.projectconverter.core.DawProjectContainer;
+import de.mossgrabers.projectconverter.core.IMediaFiles;
+import de.mossgrabers.projectconverter.core.ISourceFormat;
+import de.mossgrabers.projectconverter.core.TempoChange;
+import de.mossgrabers.projectconverter.core.TempoConverter;
+import de.mossgrabers.projectconverter.core.TimeUtils;
+import de.mossgrabers.projectconverter.format.Conversions;
+import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
+import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
+import de.mossgrabers.projectconverter.format.reaper.model.DeviceChunkHandler;
+import de.mossgrabers.projectconverter.format.reaper.model.Node;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
+import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
+import de.mossgrabers.tools.FileUtils;
+import de.mossgrabers.tools.ui.BasicConfig;
+import de.mossgrabers.tools.ui.Functions;
+import de.mossgrabers.tools.ui.panel.BoxPanel;
 
 import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.BoolParameter;
@@ -72,29 +66,36 @@ import com.bitwig.dawproject.timeline.RealPoint;
 import com.bitwig.dawproject.timeline.TimeSignaturePoint;
 import com.bitwig.dawproject.timeline.TimeUnit;
 
-import de.mossgrabers.projectconverter.INotifier;
-import de.mossgrabers.projectconverter.core.AbstractCoreTask;
-import de.mossgrabers.projectconverter.core.DawProjectContainer;
-import de.mossgrabers.projectconverter.core.IMediaFiles;
-import de.mossgrabers.projectconverter.core.ISourceFormat;
-import de.mossgrabers.projectconverter.core.TempoChange;
-import de.mossgrabers.projectconverter.core.TempoConverter;
-import de.mossgrabers.projectconverter.core.TimeUtils;
-import de.mossgrabers.projectconverter.format.Conversions;
-import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
-import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
-import de.mossgrabers.projectconverter.format.reaper.model.DeviceChunkHandler;
-import de.mossgrabers.projectconverter.format.reaper.model.Node;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
-import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
-import de.mossgrabers.tools.FileUtils;
-import de.mossgrabers.tools.ui.BasicConfig;
-import de.mossgrabers.tools.ui.Functions;
-import de.mossgrabers.tools.ui.panel.BoxPanel;
 import javafx.geometry.Orientation;
 import javafx.scene.control.CheckBox;
 import javafx.stage.FileChooser.ExtensionFilter;
+
+import javax.sound.sampled.AudioFileFormat;
+import javax.sound.sampled.AudioFileFormat.Type;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.UnsupportedAudioFileException;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 /**
@@ -111,7 +112,6 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     private static final ExtensionFilter EXTENSION_FILTER            = new ExtensionFilter ("Reaper Project", "*.rpp", "*.rpp-bak");
     private static final String          DO_NOT_COMPRESS_AUDIO_FILES = "DO_NOT_COMPRESS_AUDIO_FILES";
 
-
     private enum MidiBytes
     {
         ONE,
@@ -119,9 +119,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         BOTH
     }
 
-
     private CheckBox doNotCompressAudioFiles;
-
 
     /**
      * Constructor.
@@ -440,6 +438,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @param rootChunk The root chunk
      * @param folderStructure The folder structure
      * @param beatsAndTime The beats and/or time conversion information
+     * @return The lilst with all tempo changes
      * @throws ParseException Could not parse the master
      */
     private final List<TempoChange> convertMaster (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk rootChunk, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime) throws ParseException
@@ -1718,7 +1717,6 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         return beatsAndTime.destinationIsBeats ? time : TempoConverter.beatsToSeconds (time, beatsAndTime.tempoEnvelope);
     }
 
-
     /**
      * Helper class for creating the folder structure.
      */
@@ -1731,7 +1729,6 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         final Map<Track, Lanes>        trackLanesMap    = new HashMap<> ();
         final Map<Send, Chunk>         sendChunkMapping = new HashMap<> ();
     }
-
 
     private static BoolParameter createBoolParameter (final boolean value)
     {
