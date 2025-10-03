@@ -45,7 +45,7 @@ jobs:
             artifact_name: ProjectConverter*.dmg
             build_name: mac-arm
           # This is x64
-          - os: macos-13
+          - os: macos-14-large
             artifact_name: ProjectConverter*.dmg
             build_name: mac-x64
     
