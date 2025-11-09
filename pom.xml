@@ -172,14 +172,14 @@
 					<execution>
 						<id>mac</id>
 						<configuration>
-							<type>dmg</type>
+							<type>DMG</type>
 							<icon>icons/projectconverter.icns</icon>
 						</configuration>
 					</execution>
 					<execution>
 						<id>win</id>
 						<configuration>
-							<type>msi</type>
+							<type>MSI</type>
 							<icon>icons/projectconverter.ico</icon>
 							<winMenu>true</winMenu>
 							<winPerUserInstall>false</winPerUserInstall>
@@ -190,7 +190,7 @@
 					<execution>
 						<id>linux</id>
 						<configuration>
-							<type>deb</type>
+							<type>DEB</type>
 							<icon>src/main/resources/de/mossgrabers/projectconverter/images/AppIcon.png</icon>
 						</configuration>
 					</execution>
