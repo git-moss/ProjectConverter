@@ -163,7 +163,7 @@
 					<mainClass>${main.class}</mainClass>
 					<name>${project.name}</name>
 					<appVersion>${project.version}</appVersion>
-					<copyright>(c) 2023-2024 by ${project.organization.name}</copyright>
+					<copyright>(c) 2023-2025 by ${project.organization.name}</copyright>
 					<description>A tool for converting multi-sample from one format to another.</description>
 					<vendor>${project.organization.name}</vendor>
 					<licenseFile>LICENSE</licenseFile>
@@ -172,14 +172,14 @@
 					<execution>
 						<id>mac</id>
 						<configuration>
-							<type>DMG</type>
+							<type>dmg</type>
 							<icon>icons/projectconverter.icns</icon>
 						</configuration>
 					</execution>
 					<execution>
 						<id>win</id>
 						<configuration>
-							<type>MSI</type>
+							<type>msi</type>
 							<icon>icons/projectconverter.ico</icon>
 							<winMenu>true</winMenu>
 							<winPerUserInstall>false</winPerUserInstall>
@@ -190,7 +190,7 @@
 					<execution>
 						<id>linux</id>
 						<configuration>
-							<type>DEB</type>
+							<type>deb</type>
 							<icon>src/main/resources/de/mossgrabers/projectconverter/images/AppIcon.png</icon>
 						</configuration>
 					</execution>
