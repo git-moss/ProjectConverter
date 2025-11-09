@@ -38,12 +38,11 @@ jobs:
             artifact_name: projectconverter*.deb
             build_name: linux
           - os: windows-latest
-          # ProjectConverter*.msi
-            artifact_name: "**/*"
+            artifact_name: ProjectConverter*.exe
             build_name: win-x64
           # JDK25 not yet included (which can be fixed) but also JavaFX is not available for Windows on ARM
           #- os: windows-11-arm
-          #  artifact_name: ProjectConverter*.msi
+          #  artifact_name: ProjectConverter*.exe
           #  build_name: win-arm
           - os: macos-15
             artifact_name: ProjectConverter*.dmg
@@ -63,10 +62,6 @@ jobs:
         # distribution: 'temurin'
         distribution: 'zulu'
         java-version: 25
-    # Zulu does not contain WiX Toolset (Temurin does)!
-    - name: Install WiX Toolset
-      if: startsWith(matrix.os, 'windows')
-      run: choco install wixtoolset --no-progress -y
     - name: Build and jpackage with Maven
       run: mvn -B package jpackage::jpackage@${{ matrix.build_name }} --file pom.xml
     - name: Publish jpackage result

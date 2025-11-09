@@ -179,7 +179,7 @@
 					<execution>
 						<id>win</id>
 						<configuration>
-							<type>MSI</type>
+							<type>EXE</type>
 							<icon>icons/projectconverter.ico</icon>
 							<winMenu>true</winMenu>
 							<winPerUserInstall>false</winPerUserInstall>
