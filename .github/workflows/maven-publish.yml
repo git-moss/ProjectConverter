@@ -39,7 +39,7 @@ jobs:
             build_name: linux
           - os: windows-latest
           # ProjectConverter*.msi
-            artifact_name: **/*.msi
+            artifact_name: "**/*.msi"
             build_name: win-x64
           # JDK25 not yet included (which can be fixed) but also JavaFX is not available for Windows on ARM
           #- os: windows-11-arm
