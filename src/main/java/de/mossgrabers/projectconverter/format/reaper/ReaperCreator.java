@@ -4,24 +4,28 @@
 
 package de.mossgrabers.projectconverter.format.reaper;
 
-import de.mossgrabers.projectconverter.INotifier;
-import de.mossgrabers.projectconverter.core.AbstractCoreTask;
-import de.mossgrabers.projectconverter.core.DawProjectContainer;
-import de.mossgrabers.projectconverter.core.IDestinationFormat;
-import de.mossgrabers.projectconverter.core.IMediaFiles;
-import de.mossgrabers.projectconverter.core.TempoConverter;
-import de.mossgrabers.projectconverter.core.TimeUtils;
-import de.mossgrabers.projectconverter.format.Conversions;
-import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
-import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
-import de.mossgrabers.projectconverter.format.reaper.model.Node;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
-import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
-import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
-import de.mossgrabers.tools.ExecutionTimer;
-import de.mossgrabers.tools.ui.BasicConfig;
-import de.mossgrabers.tools.ui.Functions;
-import de.mossgrabers.tools.ui.panel.BoxPanel;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.UUID;
 
 import com.bitwig.dawproject.BoolParameter;
 import com.bitwig.dawproject.Channel;
@@ -63,34 +67,29 @@ import com.bitwig.dawproject.timeline.Timeline;
 import com.bitwig.dawproject.timeline.Warp;
 import com.bitwig.dawproject.timeline.Warps;
 
+import de.mossgrabers.projectconverter.INotifier;
+import de.mossgrabers.projectconverter.core.AbstractCoreTask;
+import de.mossgrabers.projectconverter.core.DawProjectContainer;
+import de.mossgrabers.projectconverter.core.IDestinationFormat;
+import de.mossgrabers.projectconverter.core.IMediaFiles;
+import de.mossgrabers.projectconverter.core.TempoConverter;
+import de.mossgrabers.projectconverter.core.TimeUtils;
+import de.mossgrabers.projectconverter.format.Conversions;
+import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
+import de.mossgrabers.projectconverter.format.reaper.model.ClapChunkHandler;
+import de.mossgrabers.projectconverter.format.reaper.model.Node;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperMidiEvent;
+import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
+import de.mossgrabers.projectconverter.format.reaper.model.VstChunkHandler;
+import de.mossgrabers.tools.ExecutionTimer;
+import de.mossgrabers.tools.ui.BasicConfig;
+import de.mossgrabers.tools.ui.Functions;
+import de.mossgrabers.tools.ui.panel.BoxPanel;
 import javafx.collections.ObservableList;
 import javafx.geometry.Orientation;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleGroup;
-
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.UUID;
 
 
 /**
@@ -118,6 +117,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         AUDIO_FILE_TYPES.put ("flac", "FLAC");
     }
 
+
     /** Helper structure to create a flat track list. */
     private static class TrackInfo
     {
@@ -127,7 +127,9 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         int   direction = 0;
     }
 
+
     private ToggleGroup arrangementOrScenesGroup;
+
 
     /**
      * Constructor.
@@ -877,7 +879,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
                     default -> this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", trackTimeline.getClass ().getName ());
                 }
             }
-        else
+        else if (clip.content != null)
             this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", clip.content.getClass ().getName ());
     }
 
@@ -1131,14 +1133,26 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             this.convertMarkers (rootChunk, parameters, project.arrangement.markers, arrangementIsBeats);
 
         for (final Timeline timeline: project.arrangement.lanes.lanes)
-            if (timeline instanceof final Markers markers && markers.markers != null)
-                this.convertMarkers (rootChunk, parameters, markers, arrangementIsBeats);
-            else if (timeline instanceof final Lanes lanes && lanes.track != null)
-                this.convertLanes (rootChunk, parameters, null, lanes, project, masterTrack, arrangementIsBeats);
-            else
-                this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_TYPE_IN_LANE", timeline.getClass ().getName ());
+            convertTimeline (rootChunk, project, masterTrack, parameters, arrangementIsBeats, timeline);
 
         createTempoSignatureEnvelope (arrangementIsBeats, rootChunk, parameters);
+    }
+
+
+    private void convertTimeline (final Chunk rootChunk, final Project project, final Track masterTrack, final Parameters parameters, final boolean arrangementIsBeats, final Timeline timeline)
+    {
+        if (timeline instanceof final Markers markers)
+        {
+            if (markers.markers != null)
+                this.convertMarkers (rootChunk, parameters, markers, arrangementIsBeats);
+        }
+        else if (timeline instanceof final Lanes lanes)
+        {
+            if (lanes.track != null)
+                this.convertLanes (rootChunk, parameters, null, lanes, project, masterTrack, arrangementIsBeats);
+        }
+        else
+            this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_TYPE_IN_LANE", timeline.getClass ().getName ());
     }
 
 
@@ -1293,7 +1307,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         {
             final boolean isBeats = TimeUtils.updateIsBeats (parameters.signatureEnvelope, sourceIsBeats);
             for (final Point point: parameters.signatureEnvelope.points)
-                combined.computeIfAbsent (handleTime (point.time, isBeats, parameters), key -> new ArrayList<> (Collections.singleton (new RealPoint ()))).add (point);
+                combined.computeIfAbsent (handleTime (point.time, isBeats, parameters), _ -> new ArrayList<> (Collections.singleton (new RealPoint ()))).add (point);
         }
         if (combined.isEmpty ())
             return;
@@ -1712,6 +1726,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         return parameter.value == null ? defaultValue : parameter.value.booleanValue ();
     }
 
+
     private static class Parameters
     {
         private Points                    tempoEnvelope;
@@ -1726,6 +1741,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         private final Map<Channel, Track> channelMapping = new HashMap<> ();
         private final Map<Track, Integer> trackMapping   = new HashMap<> ();
     }
+
 
     private static class ParentClip
     {
@@ -1744,6 +1760,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         double  duration      = -1;
         // An offset to the play start in the clip
         double  offset        = 0;
+
 
         public double getPosition (final boolean destinationIsBeats, final Double tempo)
         {

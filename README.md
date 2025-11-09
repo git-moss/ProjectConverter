@@ -162,9 +162,10 @@ Range markers are not supported.
 
 ## Changes
 
-### 1.2.11 (unreleased)
+### 1.2.11
 
 * New: Implemented a new logging component. Much faster and does not crash anymore.
+* Fixed: Several null pointer issues introduced by Cubase 15.
 
 ### 1.2.10
 

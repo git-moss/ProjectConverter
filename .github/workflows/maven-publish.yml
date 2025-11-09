@@ -39,13 +39,15 @@ jobs:
             build_name: linux
           - os: windows-latest
             artifact_name: ProjectConverter*.msi
-            build_name: win
-          # This is ARM64
-          - os: macos-14
+            build_name: win-x64
+          # JDK25 not yet included (which can be fixed) but also JavaFX is not available for Windows on ARM
+          #- os: windows-11-arm
+          #  artifact_name: ProjectConverter*.msi
+          #  build_name: win-arm
+          - os: macos-15
             artifact_name: ProjectConverter*.dmg
             build_name: mac-arm
-          # This is x64
-          - os: macos-13
+          - os: macos-15-intel
             artifact_name: ProjectConverter*.dmg
             build_name: mac-x64
     
@@ -55,7 +57,8 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-java@v4
       with:
-        # Crashes with: Error: /usr/lib/jvm/temurin-25-jdk-amd64/lib/ct.sym has been modified
+        # Temurin crashes with: Error: /usr/lib/jvm/temurin-25-jdk-amd64/lib/ct.sym has been modified
+        # also there is no Windows ARM build
         # distribution: 'temurin'
         distribution: 'zulu'
         java-version: 25

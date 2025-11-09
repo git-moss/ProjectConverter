@@ -152,10 +152,10 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         final ButtonPanel buttonPanel = new ButtonPanel (Orientation.VERTICAL);
         this.convertButton = setupButton (buttonPanel, "Convert", "@IDS_MAIN_CONVERT", "@IDS_MAIN_CONVERT_TOOLTIP");
-        this.convertButton.setOnAction (event -> this.execute ());
+        this.convertButton.setOnAction (_ -> this.execute ());
         this.convertButton.setDefaultButton (true);
         this.cancelButton = setupButton (buttonPanel, "Cancel", "@IDS_MAIN_CANCEL", "@IDS_MAIN_CANCEL_TOOLTIP");
-        this.cancelButton.setOnAction (event -> this.cancelExecution ());
+        this.cancelButton.setOnAction (_ -> this.cancelExecution ());
 
         final BorderPane buttonPane = new BorderPane ();
         buttonPane.setTop (buttonPanel.getPane ());
@@ -171,7 +171,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         this.sourceFileSelectButton = new Button (Functions.getText ("@IDS_MAIN_SELECT_SOURCE"));
         this.sourceFileSelectButton.setTooltip (new Tooltip (Functions.getText ("@IDS_MAIN_SELECT_SOURCE_TOOLTIP")));
-        this.sourceFileSelectButton.setOnAction (event -> this.selectSourceFile ());
+        this.sourceFileSelectButton.setOnAction (_ -> this.selectSourceFile ());
         sourceFolderPanel.setRight (this.sourceFileSelectButton);
 
         final BoxPanel sourceUpperPart = new BoxPanel (Orientation.VERTICAL);
@@ -205,7 +205,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         this.destinationFolderSelectButton = new Button (Functions.getText ("@IDS_MAIN_SELECT_DESTINATION"));
         this.destinationFolderSelectButton.setTooltip (new Tooltip (Functions.getText ("@IDS_MAIN_SELECT_DESTINATION_TOOLTIP")));
-        this.destinationFolderSelectButton.setOnAction (event -> this.selectDestinationFolder ());
+        this.destinationFolderSelectButton.setOnAction (_ -> this.selectDestinationFolder ());
         destinationFolderPanel.setRight (this.destinationFolderSelectButton);
 
         final BoxPanel destinationUpperPart = new BoxPanel (Orientation.VERTICAL);
@@ -246,7 +246,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         final ButtonPanel optionsPanel = new ButtonPanel (Orientation.HORIZONTAL);
         this.enableDarkMode = optionsPanel.createCheckBox ("@IDS_MAIN_ENABLE_DARK_MODE", "@IDS_MAIN_ENABLE_DARK_MODE_TOOLTIP");
-        this.enableDarkMode.selectedProperty ().addListener ( (obs, wasSelected, isSelected) -> this.setDarkMode (isSelected.booleanValue ()));
+        this.enableDarkMode.selectedProperty ().addListener ( (_, _, isSelected) -> this.setDarkMode (isSelected.booleanValue ()));
 
         final BorderPane mainPane = new BorderPane ();
         mainPane.setTop (topPane);
@@ -407,11 +407,11 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
             final ConversionTask conversionTask = new ConversionTask (this.sourceFile, this.outputPath, this.sourceFormats[selectedSourceFormat], destinationFormat, this);
             this.conversionTaskOpt = Optional.of (conversionTask);
-            conversionTask.setOnCancelled (event -> this.updateButtonStates (false));
-            conversionTask.setOnFailed (event -> this.updateButtonStates (false));
-            conversionTask.setOnSucceeded (event -> this.updateButtonStates (false));
-            conversionTask.setOnRunning (event -> this.updateButtonStates (true));
-            conversionTask.setOnScheduled (event -> this.updateButtonStates (true));
+            conversionTask.setOnCancelled (_ -> this.updateButtonStates (false));
+            conversionTask.setOnFailed (_ -> this.updateButtonStates (false));
+            conversionTask.setOnSucceeded (_ -> this.updateButtonStates (false));
+            conversionTask.setOnRunning (_ -> this.updateButtonStates (true));
+            conversionTask.setOnScheduled (_ -> this.updateButtonStates (true));
             this.executor.execute (conversionTask);
 
         });

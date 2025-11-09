@@ -201,6 +201,8 @@ public class ReaperProject
 
         for (final String param: node.getParameters ())
         {
+            if (param == null)
+                continue;
             result.append (' ');
             if (param.isBlank () || param.contains (" ") || param.contains ("/"))
                 result.append ('"').append (param).append ('"');
