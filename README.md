@@ -162,6 +162,11 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.12
+
+* New: Updated libraries
+* Fixed: The app icon was missing
+
 ### 1.2.11
 
 * New: Implemented a new logging component. Much faster and does not crash anymore.
