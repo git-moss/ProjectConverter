@@ -162,6 +162,11 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.13
+
+* New: Updated libraries
+* Fixed: Clip positions could be wrong if the source dawproject file was stored in seconds.
+
 ### 1.2.12
 
 * New: Updated libraries

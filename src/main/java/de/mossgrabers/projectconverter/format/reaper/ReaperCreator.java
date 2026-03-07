@@ -1192,7 +1192,8 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
 
                     // 'Roll-out' the clip to the length of the longest clip in the scene
                     final ParentClip parentClip = new ParentClip ();
-                    parentClip.valuesIsBeats = sourceIsBeats;
+                    parentClip.sourceIsBeats = sourceIsBeats;
+                    parentClip.valuesIsBeats = isBeats;
                     parentClip.position += sceneOffset;
                     parentClip.duration = maxDuration;
                     final double duration = TimeUtils.getDuration (clip);
@@ -1259,6 +1260,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             else if (trackTimeline instanceof final Clips clips)
             {
                 final ParentClip parentClip = new ParentClip ();
+                parentClip.sourceIsBeats = arrangementIsBeats;
                 parentClip.valuesIsBeats = timelineIsBeats;
                 this.convertClips (trackChunk, track, clips, parentClip, parameters);
             }
