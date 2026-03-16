@@ -854,15 +854,17 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         final double start = parentClipPosition - parentClipOffset + clipPosition;
         offset += clip.playStart == null ? 0 : handleTime (clip.playStart.doubleValue (), clipContentIsBeats, destinationIsBeats, tempo);
 
+        final boolean isMidiClip = clip.content instanceof Notes;
+
         final Double fadeIn = handleTime (clip.fadeInTime, destinationIsBeats, parameters);
         final Double fadeOut = handleTime (clip.fadeOutTime, destinationIsBeats, parameters);
-        final Chunk itemChunk = createClipChunk (trackChunk, clip.name, start, clipDuration, offset, fadeIn, fadeOut, parentClip.mute || (clip.enable != null && !clip.enable.booleanValue ()));
+        final Chunk itemChunk = createClipChunk (trackChunk, clip.name, start, clipDuration, isMidiClip ? 0 : offset, fadeIn, fadeOut, parentClip.mute || (clip.enable != null && !clip.enable.booleanValue ()));
 
         if (parentClip.comment != null && !parentClip.comment.isBlank ())
             createNotesChunk (itemChunk, parentClip.comment, ReaperTags.PROJECT_NOTES);
 
-        if (clip.content instanceof final Notes notes)
-            convertMIDI (itemChunk, parameters.tempo, clip, notes, clipDuration, destinationIsBeats, clipContentIsBeats);
+        if (isMidiClip)
+            convertMIDI (itemChunk, parameters.tempo, clip, (Notes) clip.content, clipDuration, offset, destinationIsBeats, clipContentIsBeats);
         else if (clip.content instanceof final Audio audio)
             this.convertLoopedAudio (trackChunk, clip, audio, null, parentClip, clipContentIsBeats, parameters, destinationIsBeats, start, clipDuration, offset, itemChunk);
         else if (clip.content instanceof final Warps warps)
@@ -872,7 +874,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             {
                 switch (trackTimeline)
                 {
-                    case final Notes notes -> convertMIDI (itemChunk, parameters.tempo, clip, notes, clipDuration, destinationIsBeats, clipContentIsBeats);
+                    case final Notes notes -> convertMIDI (itemChunk, parameters.tempo, clip, notes, clipDuration, offset, destinationIsBeats, clipContentIsBeats);
                     case final Audio audio -> this.convertLoopedAudio (trackChunk, clip, audio, null, parentClip, clipContentIsBeats, parameters, destinationIsBeats, start, clipDuration, offset, itemChunk);
                     case final Warps warps -> this.convertLoopedAudio (trackChunk, clip, null, warps, parentClip, clipContentIsBeats, parameters, destinationIsBeats, start, clipDuration, offset, itemChunk);
                     case final Points points when points.target != null && points.target.expression != null -> this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_ENVELOPE", points.target.expression.name ());
@@ -1032,10 +1034,11 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
      * @param clip The clip to convert
      * @param notes The notes of the clip
      * @param clipDuration The duration of the clip
+     * @param clipOffset The offset of the clip, needs to be removed from the notes
      * @param clipDurationIsBeats True if the clip duration time is in beats otherwise in seconds
      * @param clipContentIsBeats True if the time is in beats otherwise in seconds
      */
-    private static void convertMIDI (final Chunk itemChunk, final Double tempo, final Clip clip, final Notes notes, final double clipDuration, final boolean clipDurationIsBeats, final boolean clipContentIsBeats)
+    private static void convertMIDI (final Chunk itemChunk, final Double tempo, final Clip clip, final Notes notes, final double clipDuration, final double clipOffset, final boolean clipDurationIsBeats, final boolean clipContentIsBeats)
     {
         final Chunk sourceChunk = addChunk (itemChunk, ReaperTags.CHUNK_ITEM_SOURCE, "MIDI");
 
@@ -1048,6 +1051,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
 
         // Notes need to be beats base in Reaper!
         final double clipDurationInBeats = handleTime (clipDuration, clipDurationIsBeats, true, tempo);
+        final double clipOffsetInBeats = handleTime (clipOffset, false, true, tempo);
         final double loopStartInBeats = clip.loopStart == null ? 0 : handleTime (clip.loopStart.doubleValue (), clipContentIsBeats, true, tempo);
         final double loopEndInBeats = clip.loopEnd == null ? clipDurationInBeats : handleTime (clip.loopEnd.doubleValue (), clipContentIsBeats, true, tempo);
         final double loopDurationInBeats = loopEndInBeats - loopStartInBeats;
@@ -1062,7 +1066,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             if (noteStartInBeats < loopStartInBeats)
             {
                 final double noteDurationInBeats = handleTime (note.duration.doubleValue (), clipContentIsBeats, true, tempo);
-                createNoteEvent (events, note, noteStartInBeats, noteDurationInBeats);
+                createNoteEvent (events, note, noteStartInBeats - clipOffsetInBeats, noteDurationInBeats);
             }
             else if (noteStartInBeats < loopEndInBeats)
                 notesInLoop.add (note);
@@ -1085,17 +1089,26 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
                     // Clip notes at the end of the clip
                     if (noteStartInBeats + noteDurationInBeats > clipDurationInBeats)
                         noteDurationInBeats = clipDurationInBeats - noteStartInBeats;
-                    createNoteEvent (events, note, noteStartInBeats, noteDurationInBeats);
+                    createNoteEvent (events, note, noteStartInBeats - clipOffsetInBeats, noteDurationInBeats);
                 }
             }
             offset = offsetLoopEndInBeats;
         }
 
+        addNotesToChunk (clipDuration, sourceChunk, events);
+
+        // TODO add all MIDI envelope parameters
+    }
+
+
+    private static void addNotesToChunk (final double clipDuration, final Chunk sourceChunk, final List<ReaperMidiEvent> events)
+    {
         // Reaper stores MIDI events not by absolute positions but by relative offsets to the
         // previous event!
 
         // First, sort the events by their time position
         Collections.sort (events, (o1, o2) -> (int) (o1.getPosition () - o2.getPosition ()));
+
         // Second, calculate the offsets between the events from their position
         long lastPosition = 0;
         for (final ReaperMidiEvent event: events)
@@ -1110,8 +1123,6 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         final long padding = (long) ((clipDuration - lastPosition) * TICKS_PER_QUARTER_NOTE);
         final ReaperMidiEvent event = new ReaperMidiEvent (padding, 0, 0xB0, 0x7B, 0);
         sourceChunk.addChildNode (event.toNode ());
-
-        // TODO add all MIDI envelope parameters
     }
 
 

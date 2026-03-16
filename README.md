@@ -162,6 +162,10 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.2.14
+
+* Fixed: Clips with negative play-start and negative note positions had the notes at wrong positions.
+
 ### 1.2.13
 
 * New: Updated libraries
