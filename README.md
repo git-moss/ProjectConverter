@@ -41,7 +41,7 @@ This destination format has the option to create an arrangement from the Clip La
 
 ## DAWproject as the destination
 
-This destination format has the option to create an arrangement from the Clip Launcher Data similar to the Reaper destination (see above). This might be helpful for DAWs which support the DAWproject format but do not have a Clip Launcher (e.g. Presonus Studio One).
+This destination format has the option to create an arrangement from the Clip Launcher Data similar to the Reaper destination (see above). This might be helpful for DAWs which support the DAWproject format but do not have a Clip Launcher.
 
 The Reaper source has an option to not add audio files to the DAWproject file and keep their original (relative or absolute) file paths.
 
