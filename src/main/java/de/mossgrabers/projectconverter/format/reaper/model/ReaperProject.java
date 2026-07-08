@@ -129,23 +129,15 @@ public class ReaperProject
         final List<String> parts = new ArrayList<> ();
         final Matcher matcher = LINE_PATTERN.matcher (line);
         while (matcher.find ())
-        {
             if (matcher.group (1) != null)
-            {
                 // Add double-quoted string without the quotes
                 parts.add (matcher.group (1));
-            }
             else if (matcher.group (2) != null)
-            {
                 // Add single-quoted string without the quotes
                 parts.add (matcher.group (2));
-            }
             else
-            {
                 // Add unquoted word
                 parts.add (matcher.group ());
-            }
-        }
         return parts;
     }
 
@@ -178,12 +170,10 @@ public class ReaperProject
         final StringBuilder subResult = new StringBuilder ();
 
         for (final Node node: chunk.getChildNodes ())
-        {
             if (node instanceof final Chunk subChunk)
                 formatChunk (subResult, subChunk);
             else
                 formatNode (subResult, node);
-        }
 
         result.append (line).append (subResult.toString ().indent (2)).append (END_OF_CHUNK).append (CRLF);
     }

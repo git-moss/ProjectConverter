@@ -55,7 +55,7 @@ public class ReaperMidiEvent
 
             this.isMidiEvent = true;
         }
-        catch (final NumberFormatException ex)
+        catch (final NumberFormatException _)
         {
             throw new ParseException ("Malformed MIDI event in MIDI source section.", 0);
         }

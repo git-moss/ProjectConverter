@@ -341,11 +341,11 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
                 this.notifier.log ("IDS_NOTIFY_WRITING_AUDIO_FILE", path.toString ());
                 Files.copy (in, path, StandardCopyOption.REPLACE_EXISTING);
             }
-            catch (final FileNotFoundException ex)
+            catch (final FileNotFoundException _)
             {
                 this.notifier.logError ("IDS_NOTIFY_AUDIO_FILE_NOT_FOUND", audioFile);
             }
-            catch (final IOException ex)
+            catch (final IOException _)
             {
                 this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_AUDIO_CHUNK", audioFile);
             }
@@ -516,9 +516,8 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
      *
      * @param track The track
      * @param parameters The parameters
-     * @throws IOException Units must be linear
      */
-    private void convertSends (final Track track, final Parameters parameters) throws IOException
+    private void convertSends (final Track track, final Parameters parameters)
     {
         if (track.channel == null || track.channel.sends == null)
             return;
@@ -650,11 +649,11 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         {
             new VstChunkHandler (device instanceof Vst2Plugin, null).fileToChunk (in, vstChunk);
         }
-        catch (final FileNotFoundException ex)
+        catch (final FileNotFoundException _)
         {
             this.notifier.logError ("IDS_NOTIFY_DEVICE_STATE_FILE_NOT_FOUND", device.state.path);
         }
-        catch (final IOException ex)
+        catch (final IOException _)
         {
             this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_VST_CHUNK", device.state.path);
         }
@@ -705,11 +704,11 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
         {
             new ClapChunkHandler ().fileToChunk (in, clapChunk);
         }
-        catch (final FileNotFoundException ex)
+        catch (final FileNotFoundException _)
         {
             this.notifier.logError ("IDS_NOTIFY_DEVICE_STATE_FILE_NOT_FOUND", clapPlugin.state.path);
         }
-        catch (final IOException ex)
+        catch (final IOException _)
         {
             this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CREATE_CLAP_CHUNK", clapPlugin.state.path);
         }
@@ -858,7 +857,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
 
         final Double fadeIn = handleTime (clip.fadeInTime, destinationIsBeats, parameters);
         final Double fadeOut = handleTime (clip.fadeOutTime, destinationIsBeats, parameters);
-        final Chunk itemChunk = createClipChunk (trackChunk, clip.name, start, clipDuration, isMidiClip ? 0 : offset, fadeIn, fadeOut, parentClip.mute || (clip.enable != null && !clip.enable.booleanValue ()));
+        final Chunk itemChunk = createClipChunk (trackChunk, clip.name, start, clipDuration, isMidiClip ? 0 : offset, fadeIn, fadeOut, parentClip.mute || clip.enable != null && !clip.enable.booleanValue ());
 
         if (parentClip.comment != null && !parentClip.comment.isBlank ())
             createNotesChunk (itemChunk, parentClip.comment, ReaperTags.PROJECT_NOTES);
@@ -871,7 +870,6 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             this.convertLoopedAudio (trackChunk, clip, null, warps, parentClip, clipContentIsBeats, parameters, destinationIsBeats, start, clipDuration, offset, itemChunk);
         else if (clip.content instanceof final Lanes lanes)
             for (final Timeline trackTimeline: lanes.lanes)
-            {
                 switch (trackTimeline)
                 {
                     case final Notes notes -> convertMIDI (itemChunk, parameters.tempo, clip, notes, clipDuration, offset, destinationIsBeats, clipContentIsBeats);
@@ -880,7 +878,6 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
                     case final Points points when points.target != null && points.target.expression != null -> this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_ENVELOPE", points.target.expression.name ());
                     default -> this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", trackTimeline.getClass ().getName ());
                 }
-            }
         else if (clip.content != null)
             this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_CLIP_TYPE", clip.content.getClass ().getName ());
     }
@@ -913,7 +910,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
 
             final Double fadeIn = handleTime (clip.fadeInTime, isBeats, parameters);
             final Double fadeOut = handleTime (clip.fadeOutTime, isBeats, parameters);
-            itemChunk = createClipChunk (trackChunk, clip.name, start, duration, clipOffset, fadeIn, fadeOut, parentClip.mute || (clip.enable != null && !clip.enable.booleanValue ()));
+            itemChunk = createClipChunk (trackChunk, clip.name, start, duration, clipOffset, fadeIn, fadeOut, parentClip.mute || clip.enable != null && !clip.enable.booleanValue ());
         }
     }
 
@@ -1144,7 +1141,7 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             this.convertMarkers (rootChunk, parameters, project.arrangement.markers, arrangementIsBeats);
 
         for (final Timeline timeline: project.arrangement.lanes.lanes)
-            convertTimeline (rootChunk, project, masterTrack, parameters, arrangementIsBeats, timeline);
+            this.convertTimeline (rootChunk, project, masterTrack, parameters, arrangementIsBeats, timeline);
 
         createTempoSignatureEnvelope (arrangementIsBeats, rootChunk, parameters);
     }
@@ -1152,18 +1149,12 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
 
     private void convertTimeline (final Chunk rootChunk, final Project project, final Track masterTrack, final Parameters parameters, final boolean arrangementIsBeats, final Timeline timeline)
     {
-        if (timeline instanceof final Markers markers)
+        switch (timeline)
         {
-            if (markers.markers != null)
-                this.convertMarkers (rootChunk, parameters, markers, arrangementIsBeats);
+            case final Markers markers when markers.markers != null -> this.convertMarkers (rootChunk, parameters, markers, arrangementIsBeats);
+            case final Lanes lanes when lanes.track != null -> this.convertLanes (rootChunk, parameters, null, lanes, project, masterTrack, arrangementIsBeats);
+            default -> this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_TYPE_IN_LANE", timeline.getClass ().getName ());
         }
-        else if (timeline instanceof final Lanes lanes)
-        {
-            if (lanes.track != null)
-                this.convertLanes (rootChunk, parameters, null, lanes, project, masterTrack, arrangementIsBeats);
-        }
-        else
-            this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_TYPE_IN_LANE", timeline.getClass ().getName ());
     }
 
 
@@ -1266,19 +1257,22 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             // section, so we need to parse that first...
             // clips/clip/notes
             // points/target
-            if (trackTimeline instanceof final Points trackEnvelope)
-                handleEnvelopeParameter (project, masterTrack, track, trackChunk, trackEnvelope, timelineIsBeats, parameters);
-            else if (trackTimeline instanceof final Clips clips)
+            switch (trackTimeline)
             {
-                final ParentClip parentClip = new ParentClip ();
-                parentClip.sourceIsBeats = arrangementIsBeats;
-                parentClip.valuesIsBeats = timelineIsBeats;
-                this.convertClips (trackChunk, track, clips, parentClip, parameters);
+                case final Points trackEnvelope -> handleEnvelopeParameter (project, masterTrack, track, trackChunk, trackEnvelope, timelineIsBeats, parameters);
+
+                case final Clips clips -> {
+                    final ParentClip parentClip = new ParentClip ();
+                    parentClip.sourceIsBeats = arrangementIsBeats;
+                    parentClip.valuesIsBeats = timelineIsBeats;
+                    this.convertClips (trackChunk, track, clips, parentClip, parameters);
+                }
+
+                case final Warps warps -> this.convertWarps (rootOrItemChunk, parameters, warps, arrangementIsBeats);
+
+                default -> this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_TYPE_IN_LANE", trackTimeline.getClass ().getName ());
+
             }
-            else if (trackTimeline instanceof final Warps warps)
-                this.convertWarps (rootOrItemChunk, parameters, warps, arrangementIsBeats);
-            else
-                this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_TYPE_IN_LANE", trackTimeline.getClass ().getName ());
         }
     }
 
@@ -1622,13 +1616,15 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
      */
     private int fromHexColor (final String hexColor)
     {
-        String fixedHexColor = hexColor;
+        if (hexColor == null)
+            return 0xCCCCCC;
 
         try
         {
-            if (hexColor.startsWith ("#"))
-                fixedHexColor = hexColor.substring (1);
-            if (!hexColor.startsWith ("0x"))
+            String fixedHexColor = hexColor;
+            if (fixedHexColor.startsWith ("#"))
+                fixedHexColor = fixedHexColor.substring (1);
+            if (!fixedHexColor.startsWith ("0x"))
                 fixedHexColor = "0x" + fixedHexColor;
             if (fixedHexColor.length () > 8)
                 fixedHexColor = fixedHexColor.substring (0, 8);
@@ -1639,9 +1635,9 @@ public class ReaperCreator extends AbstractCoreTask implements IDestinationForma
             final int b = c >> 16 & 0xFF;
             return (r << 16) + (g << 8) + b + 0x01000000;
         }
-        catch (final NumberFormatException | NullPointerException ex)
+        catch (final NumberFormatException _)
         {
-            this.notifier.logError ("IDS_NOTIFY_INVALID_COLOR", hexColor == null ? "null" : hexColor);
+            this.notifier.logError ("IDS_NOTIFY_INVALID_COLOR", hexColor);
             return 0xCCCCCC;
         }
     }

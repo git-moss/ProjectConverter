@@ -50,10 +50,8 @@ public class Chunk extends Node
     public Optional<Node> getChildNode (final String name)
     {
         for (final Node childNode: this.childNodes)
-        {
             if (name.equals (childNode.getName ()))
                 return Optional.of (childNode);
-        }
         return Optional.empty ();
     }
 
@@ -68,10 +66,8 @@ public class Chunk extends Node
     {
         final List<Node> results = new ArrayList<> ();
         for (final Node childNode: this.childNodes)
-        {
             if (name.equals (childNode.getName ()))
                 results.add (childNode);
-        }
         return results;
     }
 }

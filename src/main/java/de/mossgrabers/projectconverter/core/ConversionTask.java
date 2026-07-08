@@ -56,18 +56,10 @@ public class ConversionTask extends Task<Void>
 
         try (final DawProjectContainer dawProject = this.sourceFormat.read (this.sourceFile);)
         {
-            if (this.waitForDelivery ())
+            if (dawProject == null || this.waitForDelivery ())
                 return null;
 
-            try
-            {
-                this.notifier.log ("IDS_NOTIFY_VALIDATING_FILE");
-                DawProject.validate (dawProject.getProject ());
-            }
-            catch (final IOException ex)
-            {
-                this.notifier.logError ("IDS_NOTIFY_COULD_NOT_VALIDATE_PROJECT", ex);
-            }
+            this.validateProject (dawProject);
 
             if (this.waitForDelivery ())
                 return null;
@@ -75,15 +67,8 @@ public class ConversionTask extends Task<Void>
             // Write output file(s)
             this.notifier.log ("IDS_NOTIFY_WRITING_FILE", this.outputPath.getAbsolutePath ());
 
-            try
-            {
-                this.destinationFormat.write (dawProject, this.outputPath);
-            }
-            catch (final IOException ex)
-            {
-                this.notifier.logError ("IDS_NOTIFY_COULD_NOT_WRITE_FILE", ex);
+            if (!this.writeProject (dawProject))
                 return null;
-            }
         }
         catch (final IOException | ParseException ex)
         {
@@ -101,6 +86,35 @@ public class ConversionTask extends Task<Void>
     }
 
 
+    private boolean writeProject (final DawProjectContainer dawProject)
+    {
+        try
+        {
+            this.destinationFormat.write (dawProject, this.outputPath);
+            return true;
+        }
+        catch (final IOException ex)
+        {
+            this.notifier.logError ("IDS_NOTIFY_COULD_NOT_WRITE_FILE", ex);
+            return false;
+        }
+    }
+
+
+    private void validateProject (final DawProjectContainer dawProject)
+    {
+        try
+        {
+            this.notifier.log ("IDS_NOTIFY_VALIDATING_FILE");
+            DawProject.validate (dawProject.getProject ());
+        }
+        catch (final IOException ex)
+        {
+            this.notifier.logError ("IDS_NOTIFY_COULD_NOT_VALIDATE_PROJECT", ex);
+        }
+    }
+
+
     /**
      * Wait a bit.
      *
@@ -112,7 +126,7 @@ public class ConversionTask extends Task<Void>
         {
             Thread.sleep (10);
         }
-        catch (final InterruptedException ex)
+        catch (final InterruptedException _)
         {
             if (this.isCancelled ())
                 return true;

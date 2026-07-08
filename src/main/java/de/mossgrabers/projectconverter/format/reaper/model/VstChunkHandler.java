@@ -363,7 +363,7 @@ public class VstChunkHandler extends DeviceChunkHandler
 
         final byte [] data = preset.getData ();
         final Vst3ChunkInfo [] chunkInfos = preset.getChunkInfos ();
-        // Note: dataSize is: data.length + 8 * chunkInfos.length;
+        // Note: dataSize is: data.length + 8 * chunkInfos.length
 
         final ByteArrayOutputStream out = new ByteArrayOutputStream ();
 

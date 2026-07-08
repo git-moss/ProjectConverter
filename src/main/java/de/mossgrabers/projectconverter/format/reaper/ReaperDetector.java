@@ -255,10 +255,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
         final Node node = renderMetadataParameter.get ();
         if (node instanceof final Chunk renderMetadataChunk)
-        {
             for (final Node tagNode: renderMetadataChunk.getChildNodes ())
                 handleMetadataTag (metadata, tagNode);
-        }
     }
 
 
@@ -440,10 +438,9 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @param rootChunk The root chunk
      * @param folderStructure The folder structure
      * @param beatsAndTime The beats and/or time conversion information
-     * @return The lilst with all tempo changes
-     * @throws ParseException Could not parse the master
+     * @return The list with all tempo changes
      */
-    private final List<TempoChange> convertMaster (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk rootChunk, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime) throws ParseException
+    private final List<TempoChange> convertMaster (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk rootChunk, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime)
     {
         final Project project = dawProject.getProject ();
 
@@ -493,18 +490,18 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         convertAutomation (masterTrack, rootChunk, ReaperTags.MASTER_VOLUME_ENVELOPE, channel.volume, true, folderStructure, beatsAndTime);
         convertAutomation (masterTrack, rootChunk, ReaperTags.MASTER_PANORAMA_ENVELOPE, channel.pan, true, folderStructure, beatsAndTime);
 
-        return toTempoChangeList (tempoEnvelope, project.transport.tempo.value.doubleValue ());
+        return toTempoChangeList (tempoEnvelope, dawProject.getTempo ());
     }
 
 
     private static List<TempoChange> toTempoChangeList (final Points envelope, final double globalTempo)
     {
         final List<TempoChange> tempoChanges = new ArrayList<> ();
-        for (final Point point: envelope.points)
-        {
-            if (point instanceof RealPoint realPoint && realPoint.time != null && realPoint.value != null)
-                tempoChanges.add (new TempoChange (realPoint.time.doubleValue (), realPoint.value.doubleValue (), realPoint.interpolation == Interpolation.LINEAR));
-        }
+
+        if (envelope != null)
+            for (final Point point: envelope.points)
+                if (point instanceof final RealPoint realPoint && realPoint.time != null && realPoint.value != null)
+                    tempoChanges.add (new TempoChange (realPoint.time.doubleValue (), realPoint.value.doubleValue (), realPoint.interpolation == Interpolation.LINEAR));
 
         if (tempoChanges.isEmpty () || tempoChanges.get (0).getTime () > 0)
             tempoChanges.add (0, new TempoChange (0, globalTempo, false));
@@ -528,10 +525,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     {
         final List<Track> tracks = new ArrayList<> ();
         for (final Node node: rootChunk.getChildNodes ())
-        {
             if (node instanceof final Chunk subChunk && ReaperTags.CHUNK_TRACK.equals (subChunk.getName ()))
                 tracks.add (this.convertTrack (dawProject, mediaFilesMap, subChunk, sourcePath, folderStructure, beatsAndTime));
-        }
 
         // In the second run assign the collected sends
         for (int i = 0; i < tracks.size (); i++)
@@ -540,11 +535,9 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
             track.channel.sends = folderStructure.sendMapping.get (Integer.valueOf (i));
 
             if (track.channel.sends != null)
-            {
                 for (final Send send: track.channel.sends)
                     // TODO add send panorama automation
                     convertAutomation (track, folderStructure.sendChunkMapping.get (send), ReaperTags.TRACK_AUX_ENVELOPE, send.volume, true, folderStructure, beatsAndTime);
-            }
         }
     }
 
@@ -634,31 +627,26 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         final Optional<Node> structureNode = trackChunk.getChildNode (ReaperTags.TRACK_STRUCTURE);
         if (structureNode.isPresent ())
             convertFolderStructure (folderStructure, track, channel, getIntParams (structureNode, -1));
+        else
+            folderStructure.folderTracks.add (track);
 
         final Lanes trackLanes = createTrackLanes (dawProject.getProject (), track, folderStructure);
 
         // Convert all FX devices
         channel.devices = this.convertDevices (mediaFilesMap, track, trackChunk, ReaperTags.CHUNK_FXCHAIN, folderStructure);
 
-        final Set<ContentType> trackTypes = this.convertClips (dawProject, mediaFilesMap, trackLanes, trackChunk, sourcePath, beatsAndTime);
+        final Set<ContentType> trackTypes = this.convertClips (mediaFilesMap, trackLanes, trackChunk, sourcePath, beatsAndTime);
 
         if (auxReceive.isEmpty ())
-        {
             // Reaper tracks are always hybrid but try to set only the necessary type
             if (trackTypes.isEmpty ())
-            {
                 track.contentType = new ContentType []
                 {
                     ContentType.NOTES,
                     ContentType.AUDIO
                 };
-            }
             else
                 track.contentType = trackTypes.toArray (new ContentType [trackTypes.size ()]);
-
-            // TODO check for group status and set mixer role:
-            // track.mixerRole = MixerRole.subMix;
-        }
 
         convertAutomation (track, trackChunk, folderStructure, beatsAndTime);
 
@@ -704,10 +692,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
             case 2:
                 folderStructure.folderTracks.add (track);
                 if (!folderStructure.folderStack.isEmpty ())
-                {
                     for (int i = 0; i < Math.abs (structure[1]); i++)
                         folderStructure.folderTracks = folderStructure.folderStack.removeLast ();
-                }
                 break;
         }
     }
@@ -837,9 +823,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @param chunkName The name of the FX list chunk
      * @return The list with the parsed devices
      * @param folderStructure The folder structure
-     * @throws ParseException Could not parse the track info
      */
-    private List<Device> convertDevices (final Map<String, File> mediaFilesMap, final Track track, final Chunk trackChunk, final String chunkName, final FolderStructure folderStructure) throws ParseException
+    private List<Device> convertDevices (final Map<String, File> mediaFilesMap, final Track track, final Chunk trackChunk, final String chunkName, final FolderStructure folderStructure)
     {
         final List<Device> devices = new ArrayList<> ();
 
@@ -870,10 +855,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
                     if (device != null)
                         devices.add (device);
                 }
-                else if (ReaperTags.FXCHAIN_PARAMETER_ENVELOPE.equals (nodeName) && node instanceof final Chunk paramEnvChunk)
-                {
+                else if (ReaperTags.FXCHAIN_PARAMETER_ENVELOPE.equals (nodeName) && node instanceof final Chunk paramEnvChunk && device != null)
                     createAutomationParameters (track, device, paramEnvChunk, folderStructure);
-                }
             }
         }
 
@@ -890,7 +873,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         {
             paramID = Integer.parseInt (id);
         }
-        catch (final NumberFormatException ex)
+        catch (final NumberFormatException _)
         {
             paramID = 0;
         }
@@ -926,9 +909,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @param offline True if the FX device is offline
      * @param bypass True if the FX device is bypassed
      * @return The created device
-     * @throws ParseException Error during parsing
      */
-    private Device convertDevice (final Map<String, File> mediaFilesMap, final Chunk chunk, final boolean bypass, final boolean offline) throws ParseException
+    private Device convertDevice (final Map<String, File> mediaFilesMap, final Chunk chunk, final boolean bypass, final boolean offline)
     {
         final List<String> parameters = chunk.getParameters ();
         if (parameters.size () < 3)
@@ -994,10 +976,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         if (ReaperTags.isInstrumentPlugin (pluginType))
             device.deviceRole = DeviceRole.INSTRUMENT;
         else
-        {
             // Other type info not available, therefore always assume an audio FX
             device.deviceRole = DeviceRole.AUDIO_FX;
-        }
 
         device.deviceName = device.name;
         device.deviceVendor = descMatcher.group (3);
@@ -1023,7 +1003,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
                 mediaFilesMap.put (device.state.path, tempFile);
             }
         }
-        catch (final IOException ex)
+        catch (final IOException _)
         {
             this.notifier.logError ("IDS_NOTIFY_COULD_NOT_CONVERT_PLUGIN_STATE", device.deviceName);
         }
@@ -1035,7 +1015,6 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     /**
      * Add the media item clips to the track structure.
      *
-     * @param dawProject The DAWproject container
      * @param mediaFilesMap Map to collect media files
      * @param trackLanes The lanes of the track to add the media item clips
      * @param trackChunk The track chunk
@@ -1044,7 +1023,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @return The type of converted clips
      * @throws ParseException Could not parse the track info
      */
-    private Set<ContentType> convertClips (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
+    private Set<ContentType> convertClips (final Map<String, File> mediaFilesMap, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final Set<ContentType> contentTypes = new HashSet<> ();
 
@@ -1060,7 +1039,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
             if (node instanceof final Chunk itemChunk)
             {
-                final Clip clip = this.convertClip (dawProject, mediaFilesMap, itemChunk, sourcePath, beatsAndTime, contentTypes);
+                final Clip clip = this.convertClip (mediaFilesMap, itemChunk, sourcePath, beatsAndTime, contentTypes);
                 if (clip != null)
                     clips.clips.add (clip);
             }
@@ -1083,7 +1062,6 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     /**
      * Parse one item clip.
      *
-     * @param dawProject The DAWproject container
      * @param mediaFilesMap Map to collect media files
      * @param itemChunk The item chunk to parse
      * @param sourcePath The path of the source project file
@@ -1092,7 +1070,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @return The clip
      * @throws ParseException Could not parse a clip
      */
-    private Clip convertClip (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime, final Set<ContentType> contentTypes) throws ParseException
+    private Clip convertClip (final Map<String, File> mediaFilesMap, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime, final Set<ContentType> contentTypes) throws ParseException
     {
         final Clip clip = new Clip ();
 
@@ -1101,8 +1079,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
         try
         {
-            double clipPosition = getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0);
-            double clipDuration = getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1);
+            final double clipPosition = getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_POSITION), 0);
+            final double clipDuration = getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_LENGTH), 1);
 
             final boolean clipMute = getDoubleParam (itemChunk.getChildNode (ReaperTags.ITEM_MUTE), 0) > 0;
             if (clipMute)
@@ -1153,7 +1131,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
                         case "MIDI":
                             final Lanes lanes = new Lanes ();
                             internalClip.content = lanes;
-                            loopLength = convertMIDI (dawProject, sourceChunk, lanes, beatsAndTime);
+                            loopLength = this.convertMIDI (sourceChunk, lanes, beatsAndTime);
                             contentTypes.add (ContentType.NOTES);
                             break;
 
@@ -1199,14 +1177,13 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     /**
      * Fill a MIDI clip.
      *
-     * @param dawProject The DAWproject container
      * @param sourceChunk The source chunk which contains the clip data
      * @param lanes The lanes where to add the MIDI events
      * @param beatsAndTime The beats and/or time conversion information
      * @return The end of the MIDI events
      * @throws ParseException Could not parse the notes
      */
-    private double convertMIDI (final DawProjectContainer dawProject, final Chunk sourceChunk, final Lanes lanes, final BeatsAndTime beatsAndTime) throws ParseException
+    private double convertMIDI (final Chunk sourceChunk, final Lanes lanes, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final Notes notes = new Notes ();
         lanes.lanes.add (notes);
@@ -1343,10 +1320,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
         final File sourceFile = isAbsolute ? filePath : new File (sourcePath, filePathName);
         if (!sourceFile.exists ())
-        {
             // Do not crash since the rest of the project file might still be useful
             this.notifier.logError ("IDS_NOTIFY_AUDIO_FILE_NOT_FOUND", sourceFile.getAbsolutePath ());
-        }
         else
         {
             this.setAudioAttributes (filename, audio, sourceFile);
@@ -1370,7 +1345,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
             if (audio.duration == -1)
                 this.notifier.logError ("IDS_NOTIFY_NO_AUDIO_FILE_LENGTH", filename);
         }
-        catch (final UnsupportedAudioFileException | IOException ex)
+        catch (final UnsupportedAudioFileException | IOException _)
         {
             throw new ParseException (Functions.getMessage ("IDS_NOTIFY_UNKNOWN_AUDIO_FORMAT", sourceFile.getAbsolutePath ()), 0);
         }
@@ -1399,7 +1374,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         {
             ticksPerQuarterNote = Integer.parseInt (hasDataParameters.get (1));
         }
-        catch (final NumberFormatException ex)
+        catch (final NumberFormatException _)
         {
             return -1;
         }
@@ -1417,10 +1392,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     private static ReaperMidiEvent findNoteStart (final List<ReaperMidiEvent> noteStarts, final ReaperMidiEvent midiEvent)
     {
         for (final ReaperMidiEvent event: noteStarts)
-        {
             if (event.getChannel () == midiEvent.getChannel () && event.getData1 () == midiEvent.getData1 ())
                 return event;
-        }
         return null;
     }
 
@@ -1492,16 +1465,14 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         final int size = parameters.size ();
         final int [] result = new int [size];
         for (int i = 0; i < size; i++)
-        {
             try
             {
                 result[i] = Integer.parseInt (parameters.get (i));
             }
-            catch (final NumberFormatException ex)
+            catch (final NumberFormatException _)
             {
                 result[i] = defaultValue;
             }
-        }
         return result;
     }
 
@@ -1523,7 +1494,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         {
             return Integer.parseInt (parameters.get (position));
         }
-        catch (final NumberFormatException ex)
+        catch (final NumberFormatException _)
         {
             return defaultValue;
         }
@@ -1559,16 +1530,14 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         final int size = parameters.size ();
         final double [] result = new double [size];
         for (int i = 0; i < size; i++)
-        {
             try
             {
                 result[i] = Double.parseDouble (parameters.get (i));
             }
-            catch (final NumberFormatException ex)
+            catch (final NumberFormatException _)
             {
                 result[i] = defaultValue;
             }
-        }
         return result;
     }
 
@@ -1590,7 +1559,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         {
             return Double.parseDouble (parameters.get (position));
         }
-        catch (final NumberFormatException ex)
+        catch (final NumberFormatException _)
         {
             return defaultValue;
         }
@@ -1679,7 +1648,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         {
             // Check if this is WAVE or AIFF, other uncompressed formats may work as well
             final Type type = audioFileFormat.getType ();
-            if (type == Type.WAVE || type == Type.AIFF || type.getExtension () == "flac")
+            if (type == Type.WAVE || type == Type.AIFF || "flac".equals (type.getExtension ()))
                 return (long) (audioFileFormat.getFrameLength () / format.getFrameRate ());
         }
 

@@ -74,7 +74,7 @@ public class DawProjectMediaFiles implements IMediaFiles
         {
             return this.zipFile.getInputStream (this.mediaFileEntries.get (id));
         }
-        catch (final NullPointerException ex)
+        catch (final NullPointerException _)
         {
             throw new FileNotFoundException (this.sourceFile.getPath ());
         }

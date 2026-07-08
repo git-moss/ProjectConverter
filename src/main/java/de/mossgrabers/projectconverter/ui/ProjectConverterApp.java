@@ -18,6 +18,7 @@ import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.ConversionTask;
 import de.mossgrabers.projectconverter.core.IDestinationFormat;
 import de.mossgrabers.projectconverter.core.ISourceFormat;
+import de.mossgrabers.projectconverter.format.bento.BentoDetector;
 import de.mossgrabers.projectconverter.format.dawproject.DawProjectCreator;
 import de.mossgrabers.projectconverter.format.dawproject.DawProjectDetector;
 import de.mossgrabers.projectconverter.format.reaper.ReaperCreator;
@@ -53,7 +54,6 @@ import javafx.scene.image.Image;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.StackPane;
 import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
 
@@ -124,7 +124,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         this.sourceFormats = new ISourceFormat []
         {
             new DawProjectDetector (this),
-            new ReaperDetector (this)
+            new ReaperDetector (this),
+            new BentoDetector (this)
         };
 
         this.sourceExtensionFilters = new ExtensionFilter [this.sourceFormats.length + 1];
@@ -146,9 +147,9 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     {
         super.initialise (stage, baseTitleOptional, true, true, true);
 
-        ////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////
         // The main button panel
-        ////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////
 
         final ButtonPanel buttonPanel = new ButtonPanel (Orientation.VERTICAL);
         this.convertButton = setupButton (buttonPanel, "Convert", "@IDS_MAIN_CONVERT", "@IDS_MAIN_CONVERT_TOOLTIP");
@@ -160,9 +161,9 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         final BorderPane buttonPane = new BorderPane ();
         buttonPane.setTop (buttonPanel.getPane ());
 
-        ////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////
         // Source pane
-        ////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////
 
         final BorderPane sourcePane = new BorderPane ();
 
@@ -194,9 +195,9 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         }
         setTabPaneLeftTabsHorizontal (this.sourceTabPane);
 
-        ////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////
         // Destination pane
-        ////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////
 
         final BorderPane destinationPane = new BorderPane ();
 
@@ -217,6 +218,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         destinationPane.setTop (destinationUpperPart.getPane ());
         this.destinationTabPane = new TabPane ();
         this.destinationTabPane.getStyleClass ().add ("paddingLeftBottomRight");
+        this.destinationTabPane.setMinWidth (500);
         destinationPane.setCenter (this.destinationTabPane);
 
         final ObservableList<Tab> destinationTabs = this.destinationTabPane.getTabs ();
@@ -228,17 +230,15 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         }
         setTabPaneLeftTabsHorizontal (this.destinationTabPane);
 
-        ////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////
         // Tie it all together ...
-        ////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////
 
         final HBox grid = new HBox ();
         grid.setFillHeight (true);
         grid.getChildren ().addAll (sourcePane, destinationPane);
         HBox.setHgrow (sourcePane, Priority.ALWAYS);
         HBox.setHgrow (destinationPane, Priority.ALWAYS);
-        sourcePane.setMaxWidth (Double.MAX_VALUE);
-        destinationPane.setMaxWidth (Double.MAX_VALUE);
 
         final BorderPane topPane = new BorderPane ();
         topPane.setCenter (grid);
@@ -246,13 +246,12 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         final ButtonPanel optionsPanel = new ButtonPanel (Orientation.HORIZONTAL);
         this.enableDarkMode = optionsPanel.createCheckBox ("@IDS_MAIN_ENABLE_DARK_MODE", "@IDS_MAIN_ENABLE_DARK_MODE_TOOLTIP");
-        this.enableDarkMode.selectedProperty ().addListener ( (_, _, isSelected) -> this.setDarkMode (isSelected.booleanValue ()));
+        this.enableDarkMode.selectedProperty ().addListener ((_, _, isSelected) -> this.setDarkMode (isSelected.booleanValue ()));
 
         final BorderPane mainPane = new BorderPane ();
         mainPane.setTop (topPane);
-        final StackPane stackPane = new StackPane (this.loggingArea);
-        stackPane.getStyleClass ().add ("padding");
-        mainPane.setCenter (stackPane);
+
+        mainPane.setCenter (this.loggingArea);
         mainPane.setBottom (optionsPanel.getPane ());
 
         this.setCenterNode (mainPane);
@@ -264,6 +263,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
 
         this.sourcePathField.requestFocus ();
         this.configureTraversalManager ();
+
+        this.show ();
     }
 
 
@@ -403,7 +404,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
             return;
         }
 
-        Platform.runLater ( () -> {
+        Platform.runLater (() -> {
 
             final ConversionTask conversionTask = new ConversionTask (this.sourceFile, this.outputPath, this.sourceFormats[selectedSourceFormat], destinationFormat, this);
             this.conversionTaskOpt = Optional.of (conversionTask);
@@ -622,7 +623,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     @Override
     public void updateButtonStates (final boolean isExecuting)
     {
-        Platform.runLater ( () -> {
+        Platform.runLater (() -> {
 
             this.cancelButton.setDisable (!isExecuting);
             this.convertButton.setDisable (isExecuting);
@@ -665,8 +666,8 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
     {
         tabPane.setSide (Side.LEFT);
         tabPane.setRotateGraphic (true);
-        tabPane.setTabMinHeight (160); // Determines tab width. I know, its odd.
-        tabPane.setTabMaxHeight (200);
+        tabPane.setTabMinHeight (120); // Determines tab width. I know, its odd.
+        tabPane.setTabMaxHeight (160);
         tabPane.getStyleClass ().add ("horizontal-tab-pane");
 
         for (final Tab tab: tabPane.getTabs ())
@@ -677,7 +678,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
             l.setPrefHeight (0);
             tab.setGraphic (l);
 
-            Platform.runLater ( () -> rotateTabLabels (tab));
+            Platform.runLater (() -> rotateTabLabels (tab));
         }
     }
 
@@ -689,7 +690,7 @@ public class ProjectConverterApp extends AbstractFrame implements INotifier
         final Parent parent = tab.getGraphic ().getParent ();
         if (parent == null)
         {
-            Platform.runLater ( () -> rotateTabLabels (tab));
+            Platform.runLater (() -> rotateTabLabels (tab));
             return;
         }
         final Parent tabContainer = parent.getParent ();

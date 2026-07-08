@@ -162,6 +162,13 @@ Range markers are not supported.
 
 ## Changes
 
+### 1.3 (unreleased)
+
+* New: Improved layout
+* New: Added support for MP3 and FLAC
+* Fixed: Reaper project as a source without a tempo timeline did crash.
+* Fixed: Old Reaper projects without a top level folder structure had missing tracks.  
+
 ### 1.2.14
 
 * Fixed: Clips with negative play-start and negative note positions had the notes at wrong positions.

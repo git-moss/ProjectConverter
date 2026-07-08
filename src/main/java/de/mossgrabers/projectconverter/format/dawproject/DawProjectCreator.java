@@ -219,10 +219,8 @@ public class DawProjectCreator extends AbstractCoreTask implements IDestinationF
     {
         final List<ClipSlot> clipSlots = new ArrayList<> ();
         for (final Timeline timeline: timelineObjects)
-        {
             if (timeline instanceof final ClipSlot clipSlot && clipSlot.track != null && clipSlot.clip != null)
                 clipSlots.add (clipSlot);
-        }
         return clipSlots;
     }
 

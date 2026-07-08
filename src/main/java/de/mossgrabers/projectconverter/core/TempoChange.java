@@ -18,7 +18,7 @@ public class TempoChange
 
     /**
      * Constructor.
-     * 
+     *
      * @param time The position of the tempo change event in seconds
      * @param tempo The new tempo starting at this position
      * @param isLinear If true, a linear change till the next tempo event will happen
@@ -33,7 +33,7 @@ public class TempoChange
 
     /**
      * Get the position of the tempo change.
-     * 
+     *
      * @return The position
      */
     public double getTime ()
@@ -44,7 +44,7 @@ public class TempoChange
 
     /**
      * Get the tempo starting at the position.
-     * 
+     *
      * @return The tempo
      */
     public double getTempo ()
@@ -55,7 +55,7 @@ public class TempoChange
 
     /**
      * Should the tempo change happen immediately or linear till the next tempo event?
-     * 
+     *
      * @return True if linear change should happen
      */
     public boolean isLinear ()

@@ -120,6 +120,7 @@ public class DawProjectContainer implements Closeable
     @Override
     public void close () throws IOException
     {
-        this.mediaFiles.close ();
+        if (this.mediaFiles != null)
+            this.mediaFiles.close ();
     }
 }

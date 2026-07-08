@@ -15,6 +15,15 @@ import java.util.List;
 public class TempoConverter
 {
     /**
+     * Constructor. Private due to helper class.
+     */
+    private TempoConverter ()
+    {
+        // Intentionally empty
+    }
+
+
+    /**
      * Convert a time value in seconds to beats.
      *
      * @param seconds The time value in seconds
@@ -34,7 +43,7 @@ public class TempoConverter
      * tempo between the current tempo and the next tempo, and use this average tempo to calculate
      * the beats. If seconds is within a linear tempo change, it will calculate the proportion of
      * the elapsed time within this tempo change and adjust the current tempo accordingly.
-     * 
+     *
      * @param seconds The seconds value
      * @param tempoMap The tempo map
      * @return The value in beats
@@ -74,7 +83,7 @@ public class TempoConverter
                     // Then integrate the space below the linear change from the previous tempo
                     // change to the position. This can be done by using the formula for the area of
                     // a trapezoid, which is (a+b)/2*h
-                    return beats + ((previousTempo + tempoPos) / 60.0) / 2.0 * rangeTime;
+                    return beats + (previousTempo + tempoPos) / 60.0 / 2.0 * rangeTime;
                 }
 
                 // The position is after the tempo ramp, we can simply use the average tempo to
@@ -121,7 +130,7 @@ public class TempoConverter
      * of the elapsed beats within this tempo change and adjust the current time accordingly. If
      * beats is within a linear tempo change, it will calculate the average tempo using the
      * proportion of the elapsed beats and use this average tempo to calculate the seconds.
-     * 
+     *
      * @param beats The beats value
      * @param tempoMap The tempo-map
      * @return The value in seconds
@@ -149,16 +158,16 @@ public class TempoConverter
                 final double rangeTime = currentTime - previousTime;
                 final double previousTempoInSeconds = previousTempo / 60.0;
                 final double currentTempoInSeconds = currentTempo / 60.0;
-                final double fullRangeBeats = ((previousTempoInSeconds + currentTempoInSeconds) / 2.0) * rangeTime;
+                final double fullRangeBeats = (previousTempoInSeconds + currentTempoInSeconds) / 2.0 * rangeTime;
                 final double currentBeats = previousBeats + fullRangeBeats;
 
                 if (beats <= currentBeats)
                 {
                     // Calculate a, b, and c for the quadratic formula
-                    double a = 0.5 * ((currentTempoInSeconds - previousTempoInSeconds) / rangeTime);
-                    double b = previousTempoInSeconds;
-                    double c = -fullRangeBeats;
-                    double discriminant = Math.pow (b, 2) - (4 * a * c);
+                    final double a = 0.5 * ((currentTempoInSeconds - previousTempoInSeconds) / rangeTime);
+                    final double b = previousTempoInSeconds;
+                    final double c = -fullRangeBeats;
+                    final double discriminant = Math.pow (b, 2) - 4 * a * c;
                     // Only 1 result of the quadratic formula since the seconds are always positive!
                     seconds += (-b + Math.sqrt (discriminant)) / (2 * a);
                     return seconds;
@@ -169,7 +178,7 @@ public class TempoConverter
             }
             else
             {
-                double bps = previousTempo / 60.0;
+                final double bps = previousTempo / 60.0;
                 final double currentBeats = previousBeats + (currentTime - previousTime) * bps;
                 if (beats <= currentBeats)
                 {
