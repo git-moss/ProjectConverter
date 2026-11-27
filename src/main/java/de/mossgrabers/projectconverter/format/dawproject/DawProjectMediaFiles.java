@@ -65,7 +65,8 @@ public class DawProjectMediaFiles implements IMediaFiles
     @Override
     public InputStream stream (final String id) throws IOException
     {
-        final File file = new File (this.parentPath, id);
+        final File path = new File (id);
+        final File file = path.isAbsolute () ? path : new File (this.parentPath, id);
         // Is the file external?
         if (file.exists ())
             return new FileInputStream (file);

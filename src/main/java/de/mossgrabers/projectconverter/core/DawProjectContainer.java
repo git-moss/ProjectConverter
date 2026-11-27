@@ -7,10 +7,13 @@ package de.mossgrabers.projectconverter.core;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
 
 import com.bitwig.dawproject.DawProject;
 import com.bitwig.dawproject.MetaData;
 import com.bitwig.dawproject.Project;
+import com.bitwig.dawproject.timeline.Audio;
 
 import de.mossgrabers.tools.FileUtils;
 
@@ -26,6 +29,7 @@ public class DawProjectContainer implements Closeable
     private final MetaData    metadata;
     private final Project     project;
     private final IMediaFiles mediaFiles;
+    private final Set<Audio>  audioWithUnknownMetadata = new HashSet<> ();
 
 
     /**
@@ -101,6 +105,16 @@ public class DawProjectContainer implements Closeable
     public IMediaFiles getMediaFiles ()
     {
         return this.mediaFiles;
+    }
+
+    /**
+     * Audio elements whose file metadata is unavailable.
+     *
+     * @return The audio elements
+     */
+    public Set<Audio> getAudioWithUnknownMetadata ()
+    {
+        return this.audioWithUnknownMetadata;
     }
 
 
