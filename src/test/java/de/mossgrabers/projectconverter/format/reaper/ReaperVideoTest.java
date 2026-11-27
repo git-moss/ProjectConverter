@@ -10,16 +10,29 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import javax.xml.parsers.DocumentBuilderFactory;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.w3c.dom.Element;
+import org.xml.sax.InputSource;
 
+import com.bitwig.dawproject.Arrangement;
+import com.bitwig.dawproject.ContentType;
+import com.bitwig.dawproject.Referenceable;
 import com.bitwig.dawproject.Track;
 import com.bitwig.dawproject.timeline.Audio;
 import com.bitwig.dawproject.timeline.Clip;
+import com.bitwig.dawproject.timeline.Clips;
 import com.bitwig.dawproject.timeline.Lanes;
 import com.bitwig.dawproject.timeline.TimeUnit;
 import com.bitwig.dawproject.timeline.Video;
@@ -29,8 +42,11 @@ import com.bitwig.dawproject.timeline.Warps;
 import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.IMediaFiles;
+import de.mossgrabers.projectconverter.core.TempoChange;
+import de.mossgrabers.projectconverter.format.dawproject.DawProjectCreator;
 import de.mossgrabers.projectconverter.format.dawproject.DawProjectMediaFiles;
 import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
+import de.mossgrabers.projectconverter.format.reaper.model.Node;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
 
 class ReaperVideoTest
@@ -132,6 +148,116 @@ class ReaperVideoTest
             final Chunk source = (Chunk) item.getChildNode ("SOURCE").orElseThrow ();
             assertEquals (example[1], source.getParameters ().get (0));
         }
+    }
+
+    @Test
+    void exportsVideoAsAudioWithoutUnknownMetadata (@TempDir final Path dir) throws Exception
+    {
+        Referenceable.setAutoID (true);
+        final Path video = dir.resolve ("movie.mp4");
+        Files.writeString (video, "video data");
+        final DawProjectContainer project = new DawProjectContainer ("test", new ReaperMediaFiles ());
+        final Map<String, File> media = new HashMap<> ();
+        final Clip clip = importVideoClip (dir, project, media, "movie.mp4", false, false);
+        final Audio audio = (Audio) ((Clips) clip.content).clips.get (0).content;
+        assertEquals ("samples/movie.mp4", audio.file.path);
+        assertEquals (video.toFile (), media.get ("samples/movie.mp4"));
+        assertEquals (4, clip.time);
+        assertEquals (6, clip.duration);
+
+        final Audio knownAudio = new Audio ();
+        knownAudio.file.path = "samples/known.wav";
+        knownAudio.sampleRate = 48000;
+        knownAudio.channels = 2;
+        knownAudio.duration = 4;
+        final Clip knownClip = new Clip ();
+        knownClip.content = knownAudio;
+        final Clips clips = new Clips ();
+        clips.clips.add (clip);
+        clips.clips.add (knownClip);
+        project.getProject ().arrangement = new Arrangement ();
+        project.getProject ().arrangement.lanes = new Lanes ();
+        project.getProject ().arrangement.lanes.lanes.add (clips);
+
+        final Method toXML = DawProjectCreator.class.getDeclaredMethod ("toXML", Object.class, Set.class);
+        toXML.setAccessible (true);
+        final String xml = (String) toXML.invoke (null, project.getProject (), project.getAudioWithUnknownMetadata ());
+        final var document = DocumentBuilderFactory.newInstance ().newDocumentBuilder ().parse (new InputSource (new java.io.StringReader (xml)));
+        final var audios = document.getElementsByTagName ("Audio");
+        assertEquals (2, audios.getLength ());
+        final Element videoAudio = (Element) audios.item (0);
+        assertFalse (videoAudio.hasAttribute ("sampleRate"));
+        assertFalse (videoAudio.hasAttribute ("channels"));
+        assertFalse (videoAudio.hasAttribute ("duration"));
+        final Element waveAudio = (Element) audios.item (1);
+        assertEquals ("48000", waveAudio.getAttribute ("sampleRate"));
+        assertEquals ("2", waveAudio.getAttribute ("channels"));
+        assertEquals ("4.0", waveAudio.getAttribute ("duration"));
+        assertTrue (this.notifier.errors.isEmpty (), this.notifier.errors.toString ());
+    }
+
+
+    @Test
+    void exportsExternalVideoAndWarnsForUnknownLoopLength (@TempDir final Path dir) throws Exception
+    {
+        final Path video = dir.resolve ("movie.mp4");
+        Files.writeString (video, "video data");
+        final DawProjectContainer project = new DawProjectContainer ("test", new ReaperMediaFiles ());
+        final Map<String, File> media = new HashMap<> ();
+        final Clip clip = importVideoClip (dir, project, media, video.toString (), true, true);
+        final Audio audio = (Audio) ((Clips) clip.content).clips.get (0).content;
+        assertEquals (video.toString (), audio.file.path);
+        assertEquals (Boolean.TRUE, audio.file.external);
+        assertTrue (media.isEmpty ());
+        assertNull (clip.loopEnd);
+        assertEquals (List.of ("IDS_NOTIFY_VIDEO_LOOP_UNSUPPORTED"), this.notifier.errors);
+    }
+
+
+    @Test
+    void reportsMissingVideoFile (@TempDir final Path dir) throws Exception
+    {
+        final DawProjectContainer project = new DawProjectContainer ("test", new ReaperMediaFiles ());
+        final Map<String, File> media = new HashMap<> ();
+        final Clip clip = importVideoClip (dir, project, media, "missing.mp4", false, false);
+        assertNotNull (clip);
+        assertTrue (media.isEmpty ());
+        assertEquals (List.of ("IDS_NOTIFY_AUDIO_FILE_NOT_FOUND"), this.notifier.errors);
+    }
+
+
+    private Clip importVideoClip (final Path dir, final DawProjectContainer project, final Map<String, File> media, final String filename, final boolean noCompression, final boolean looped) throws Exception
+    {
+        final Chunk item = new Chunk ();
+        item.setName ("ITEM");
+        item.addChildNode (node ("POSITION", "2"));
+        item.addChildNode (node ("LENGTH", "3"));
+        item.addChildNode (node ("SOFFS", "0.5"));
+        item.addChildNode (node ("LOOP", looped ? "1" : "0"));
+        final Chunk source = new Chunk ();
+        source.setName ("SOURCE");
+        source.addParameters (List.of ("VIDEO"));
+        source.addChildNode (node ("FILE", filename));
+        item.addChildNode (source);
+        final BeatsAndTime timing = new BeatsAndTime ();
+        timing.tempoEnvelope = List.of (new TempoChange (0, 120, false));
+        final Set<ContentType> contentTypes = new HashSet<> ();
+        final Method convert = ReaperDetector.class.getDeclaredMethod ("convertClip", DawProjectContainer.class, Map.class, Chunk.class, File.class, BeatsAndTime.class, Set.class, BooleanSupplier.class);
+        convert.setAccessible (true);
+        final BooleanSupplier external = () -> noCompression;
+        final Clip clip = (Clip) convert.invoke (new ReaperDetector (this.notifier), project, media, item, dir.toFile (), timing, contentTypes, external);
+        assertEquals (Set.of (ContentType.AUDIO), contentTypes);
+        assertEquals (1, ((Clips) clip.content).clips.get (0).playStart);
+        return clip;
+    }
+
+
+    private static Node node (final String name, final String value)
+    {
+        final Node node = new Node ();
+        node.setName (name);
+        node.addParameters (List.of (value));
+        return node;
     }
 
 

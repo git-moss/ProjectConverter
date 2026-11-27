@@ -133,6 +133,7 @@ Range markers are not supported.
 ### Video Items
 
 * Video clips from DAWproject to Reaper, including simple warps
+* Reaper video sources exported as DAWproject audio clips, without file metadata
 
 ### Automation
 
@@ -155,7 +156,7 @@ Range markers are not supported.
 * Currently, the following features of the DAWproject format are not supported:
 	* Built-in devices.
 	* AU plugins.
-	* Video clips from Reaper to DAWproject.
+	* Video-specific edits from Reaper to DAWproject. Video source audio is exported without file metadata, which may not be accepted by every DAW; looping cannot be preserved without the source duration.
 	* Modulation envelope on Panorama on sends.
 	* Plug-in automation items, curved envelopes, and disabled envelopes. VST export supports normalized real-valued parameters with linear or hold points; beat-based VST automation with tempo changes is not exported. VST 3 export relies on Reaper resolving parameter IDs when the plug-in is available; verify the automation after opening the project, especially if a plug-in or parameter is missing.
 	* MIDI parameter envelopes.

@@ -12,15 +12,29 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
 import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.Project;
 import com.bitwig.dawproject.Scene;
 import com.bitwig.dawproject.Track;
+import com.bitwig.dawproject.timeline.Audio;
 import com.bitwig.dawproject.timeline.Clip;
 import com.bitwig.dawproject.timeline.ClipSlot;
 import com.bitwig.dawproject.timeline.Clips;
@@ -113,7 +127,7 @@ public class DawProjectCreator extends AbstractCoreTask implements IDestinationF
         final File outputFile = getFile (dawProject.getName (), outputPath);
 
         final String metadataXML = toXML (dawProject.getMetadata ());
-        final String projectXML = toXML (dawProject.getProject ());
+        final String projectXML = toXML (dawProject.getProject (), dawProject.getAudioWithUnknownMetadata ());
 
         if (this.notifier.isCancelled ())
             return;
@@ -264,18 +278,52 @@ public class DawProjectCreator extends AbstractCoreTask implements IDestinationF
 
     private static String toXML (final Object object) throws IOException
     {
+        return toXML (object, Set.of ());
+    }
+
+
+    private static String toXML (final Object object, final Set<Audio> audioWithUnknownMetadata) throws IOException
+    {
         try
         {
             final JAXBContext context = createContext (object.getClass ());
-            final Marshaller marshaller = context.createMarshaller ();
-            marshaller.setProperty (Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE);
-
             final var sw = new StringWriter ();
-            marshaller.marshal (object, sw);
+            if (audioWithUnknownMetadata.isEmpty ())
+            {
+                final Marshaller marshaller = context.createMarshaller ();
+                marshaller.setProperty (Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE);
+                marshaller.marshal (object, sw);
+            }
+            else
+            {
+                final Document document = DocumentBuilderFactory.newInstance ().newDocumentBuilder ().newDocument ();
+                context.createMarshaller ().marshal (object, document);
+                final Set<String> audioIds = new HashSet<> ();
+                for (final Audio audio: audioWithUnknownMetadata)
+                {
+                    if (audio.id == null)
+                        throw new IOException ("Audio element with unknown metadata has no ID");
+                    audioIds.add (audio.id);
+                }
+                final var elements = document.getElementsByTagName ("Audio");
+                for (int i = 0; i < elements.getLength (); i++)
+                {
+                    final Element element = (Element) elements.item (i);
+                    if (audioIds.contains (element.getAttribute ("id")))
+                    {
+                        element.removeAttribute ("sampleRate");
+                        element.removeAttribute ("channels");
+                        element.removeAttribute ("duration");
+                    }
+                }
+                final var transformer = TransformerFactory.newInstance ().newTransformer ();
+                transformer.setOutputProperty (OutputKeys.INDENT, "yes");
+                transformer.transform (new DOMSource (document), new StreamResult (sw));
+            }
 
             return sw.toString ();
         }
-        catch (final Exception ex)
+        catch (final JAXBException | ParserConfigurationException | TransformerException ex)
         {
             throw new IOException (ex);
         }

@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -634,7 +635,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         // Convert all FX devices
         channel.devices = this.convertDevices (mediaFilesMap, track, trackChunk, ReaperTags.CHUNK_FXCHAIN, folderStructure);
 
-        final Set<ContentType> trackTypes = this.convertClips (mediaFilesMap, trackLanes, trackChunk, sourcePath, beatsAndTime);
+        final Set<ContentType> trackTypes = this.convertClips (dawProject, mediaFilesMap, trackLanes, trackChunk, sourcePath, beatsAndTime);
 
         if (auxReceive.isEmpty ())
             // Reaper tracks are always hybrid but try to set only the necessary type
@@ -1069,7 +1070,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @return The type of converted clips
      * @throws ParseException Could not parse the track info
      */
-    private Set<ContentType> convertClips (final Map<String, File> mediaFilesMap, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
+    private Set<ContentType> convertClips (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Lanes trackLanes, final Chunk trackChunk, final File sourcePath, final BeatsAndTime beatsAndTime) throws ParseException
     {
         final Set<ContentType> contentTypes = new HashSet<> ();
 
@@ -1085,7 +1086,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
             if (node instanceof final Chunk itemChunk)
             {
-                final Clip clip = this.convertClip (mediaFilesMap, itemChunk, sourcePath, beatsAndTime, contentTypes);
+                final Clip clip = this.convertClip (dawProject, mediaFilesMap, itemChunk, sourcePath, beatsAndTime, contentTypes, () -> this.doNotCompressAudioFiles.isSelected ());
                 if (clip != null)
                     clips.clips.add (clip);
             }
@@ -1108,15 +1109,17 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     /**
      * Parse one item clip.
      *
+     * @param dawProject The project being populated
      * @param mediaFilesMap Map to collect media files
      * @param itemChunk The item chunk to parse
      * @param sourcePath The path of the source project file
      * @param beatsAndTime The beats and/or time conversion information
      * @param contentTypes The content types of the clips
+     * @param noCompression Whether to leave media files external
      * @return The clip
      * @throws ParseException Could not parse a clip
      */
-    private Clip convertClip (final Map<String, File> mediaFilesMap, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime, final Set<ContentType> contentTypes) throws ParseException
+    private Clip convertClip (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk itemChunk, final File sourcePath, final BeatsAndTime beatsAndTime, final Set<ContentType> contentTypes, final BooleanSupplier noCompression) throws ParseException
     {
         final Clip clip = new Clip ();
 
@@ -1181,12 +1184,19 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
                             contentTypes.add (ContentType.NOTES);
                             break;
 
-                        case "WAVE", "FLAC":
-                            final Audio audio = this.convertAudio (mediaFilesMap, sourceChunk, sourcePath);
+                        case "WAVE", "FLAC", "VIDEO":
+                            final boolean videoSource = "VIDEO".equals (clipType);
+                            final Audio audio = this.convertAudio (mediaFilesMap, sourceChunk, sourcePath, !videoSource, noCompression.getAsBoolean ());
                             if (audio == null)
                                 return null;
                             internalClip.content = audio;
-                            loopLength = handleTime (beatsAndTime, audio.duration, false);
+                            if (videoSource)
+                            {
+                                dawProject.getAudioWithUnknownMetadata ().add (audio);
+                                loopLength = -1;
+                            }
+                            else
+                                loopLength = handleTime (beatsAndTime, audio.duration, false);
                             contentTypes.add (ContentType.AUDIO);
                             break;
 
@@ -1197,7 +1207,9 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
                     }
 
                     final boolean isLooped = getIntParam (itemChunk.getChildNode (ReaperTags.ITEM_LOOP), 0) > 0;
-                    if (isLooped)
+                    if (isLooped && loopLength < 0)
+                        this.notifier.logError ("IDS_NOTIFY_VIDEO_LOOP_UNSUPPORTED", clip.name == null ? "" : clip.name);
+                    else if (isLooped)
                     {
                         clip.loopStart = Double.valueOf (0);
                         clip.loopEnd = Double.valueOf (loopLength);
@@ -1337,10 +1349,12 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @param mediaFilesMap Map to collect media files
      * @param sourceChunk The audio source chunk
      * @param sourcePath The path of the source project file
+     * @param readMetadata Whether to read audio metadata from the file
+     * @param noCompression Whether to leave the media file external
      * @return The created Audio clip object
      * @throws ParseException Could not retrieve audio file format
      */
-    private Audio convertAudio (final Map<String, File> mediaFilesMap, final Chunk sourceChunk, final File sourcePath) throws ParseException
+    private Audio convertAudio (final Map<String, File> mediaFilesMap, final Chunk sourceChunk, final File sourcePath, final boolean readMetadata, final boolean noCompression) throws ParseException
     {
         final Optional<Node> waveFileOptional = sourceChunk.getChildNode (ReaperTags.SOURCE_FILE);
         if (waveFileOptional.isEmpty ())
@@ -1354,7 +1368,6 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         final String filePathName = waveFileNodeParameters.get (0).replaceAll ("^\"|\"$", "").replace ('\\', '/');
         final File filePath = new File (filePathName);
         final boolean isAbsolute = filePath.isAbsolute ();
-        final boolean noCompression = this.doNotCompressAudioFiles.isSelected ();
         final String filename = isAbsolute ? filePath.getName () : filePathName;
 
         final Audio audio = new Audio ();
@@ -1370,7 +1383,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
             this.notifier.logError ("IDS_NOTIFY_AUDIO_FILE_NOT_FOUND", sourceFile.getAbsolutePath ());
         else
         {
-            this.setAudioAttributes (filename, audio, sourceFile);
+            if (readMetadata)
+                this.setAudioAttributes (filename, audio, sourceFile);
             if (!noCompression)
                 mediaFilesMap.put (audio.file.path, sourceFile);
         }
