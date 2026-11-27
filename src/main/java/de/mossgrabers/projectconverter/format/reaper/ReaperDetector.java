@@ -481,10 +481,9 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         if (color >= 0)
             masterTrack.color = toHexColor (color);
 
+        createTrackLanes (project, masterTrack, folderStructure);
         // Convert all FX devices
         channel.devices = this.convertDevices (mediaFilesMap, masterTrack, rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN, folderStructure);
-
-        createTrackLanes (project, masterTrack, folderStructure);
         final Points tempoEnvelope = convertTempoAutomation (dawProject, rootChunk);
 
         convertAutomation (masterTrack, rootChunk, ReaperTags.MASTER_VOLUME_ENVELOPE, channel.volume, true, folderStructure, beatsAndTime);
@@ -845,6 +844,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
                 if (ReaperTags.FXCHAIN_BYPASS.equals (nodeName))
                 {
+                    device = null;
                     final int [] params = getIntParams (node, 0);
                     bypass = params.length > 0 && params[0] > 0;
                     offline = params.length > 1 && params[1] > 0;
@@ -856,7 +856,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
                         devices.add (device);
                 }
                 else if (ReaperTags.FXCHAIN_PARAMETER_ENVELOPE.equals (nodeName) && node instanceof final Chunk paramEnvChunk && device != null)
-                    createAutomationParameters (track, device, paramEnvChunk, folderStructure);
+                    this.createAutomationParameters (track, device, paramEnvChunk, folderStructure);
             }
         }
 
@@ -864,18 +864,62 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     }
 
 
-    private static void createAutomationParameters (final Track track, final Device device, final Chunk paramEnvChunk, final FolderStructure folderStructure)
+    private void createAutomationParameters (final Track track, final Device device, final Chunk paramEnvChunk, final FolderStructure folderStructure)
     {
-        String id = getParam (paramEnvChunk, 0, "0");
-        id = id.split (":")[0];
+        final String identifier = getParam (paramEnvChunk, 0, "");
+        final String [] idParts = identifier.split (":", 2);
+        if (paramEnvChunk.getChildNode ("POOLEDENVINST").isPresent () || getIntParam (paramEnvChunk.getChildNode ("ACT"), 1) == 0)
+        {
+            this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_PLUGIN_AUTOMATION", device.deviceName, identifier);
+            return;
+        }
         int paramID;
         try
         {
-            paramID = Integer.parseInt (id);
+            if (device instanceof Vst3Plugin || device instanceof ClapPlugin)
+            {
+                if (idParts.length < 2)
+                    throw new NumberFormatException ();
+                paramID = idParts[1].startsWith ("-") ? Integer.parseInt (idParts[1]) : Integer.parseUnsignedInt (idParts[1]);
+            }
+            else
+            {
+                paramID = Integer.parseInt (idParts[0]);
+                if (paramID < 0 || idParts.length > 1 && !idParts[1].startsWith ("_"))
+                    throw new NumberFormatException ();
+            }
         }
         catch (final NumberFormatException _)
         {
-            paramID = 0;
+            this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_PLUGIN_AUTOMATION", device.deviceName, identifier);
+            return;
+        }
+
+        final List<Node> pointNodes = paramEnvChunk.getChildNodes (ReaperTags.ENVELOPE_POINT);
+        final int defaultShape;
+        try
+        {
+            for (int i = 1; i <= 3; i++)
+                if (!Double.isFinite (Double.parseDouble (paramEnvChunk.getParameters ().get (i))))
+                    throw new NumberFormatException ();
+            final Optional<Node> defaultShapeNode = paramEnvChunk.getChildNode ("DEFSHAPE");
+            defaultShape = defaultShapeNode.isPresent () ? Integer.parseInt (defaultShapeNode.get ().getParameters ().get (0)) : 0;
+            for (final Node pointNode: pointNodes)
+            {
+                final List<String> values = pointNode.getParameters ();
+                if (!Double.isFinite (Double.parseDouble (values.get (0))) || !Double.isFinite (Double.parseDouble (values.get (1))))
+                    throw new NumberFormatException ();
+                int shape = values.size () > 2 ? Integer.parseInt (values.get (2)) : defaultShape;
+                if (shape == -1)
+                    shape = defaultShape;
+                if (shape != 0 && shape != 1)
+                    throw new NumberFormatException ();
+            }
+        }
+        catch (final NumberFormatException | IndexOutOfBoundsException _)
+        {
+            this.notifier.logError ("IDS_NOTIFY_UNSUPPORTED_PLUGIN_AUTOMATION", device.deviceName, identifier);
+            return;
         }
 
         final RealParameter param = Utility.createRealParameter (Unit.LINEAR, getDoubleParam (paramEnvChunk, 1, 0), getDoubleParam (paramEnvChunk, 2, 0), getDoubleParam (paramEnvChunk, 3, 0));
@@ -889,11 +933,13 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         envelope.unit = Unit.LINEAR;
         envelope.target.parameter = param;
 
-        for (final Node pointNode: paramEnvChunk.getChildNodes (ReaperTags.ENVELOPE_POINT))
+        for (final Node pointNode: pointNodes)
         {
             final RealPoint point = new RealPoint ();
-            // TODO Is there interpolation info in Reaper?
-            point.interpolation = Interpolation.LINEAR;
+            int shape = getIntParam (pointNode, 2, defaultShape);
+            if (shape == -1)
+                shape = defaultShape;
+            point.interpolation = shape == 0 ? Interpolation.LINEAR : Interpolation.HOLD;
             point.time = Double.valueOf (getDoubleParam (pointNode, 0, 0));
             point.value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
             envelope.points.add (point);

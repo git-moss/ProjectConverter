@@ -59,16 +59,17 @@
 			<version>1.9.5.4</version>
 		</dependency>
 		<!-- OGG/Vorbis -->
-		<dependency>
-			<groupId>com.github.trilarion</groupId>
-			<artifactId>java-vorbis-support</artifactId>
-			<version>1.2.1</version>
-		</dependency>
 		<!-- FLAC -->
 		<dependency>
 			<groupId>com.io7m.flannel</groupId>
 			<artifactId>com.io7m.flannel.core</artifactId>
 			<version>1.0.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>5.12.2</version>
+			<scope>test</scope>
 		</dependency>
 	</dependencies>
 

@@ -126,8 +126,13 @@ Range markers are not supported.
 ### Audio Items
 
 * Type: WAVE or FLAC
+* MP4 sources (DAWproject to Reaper)
 * The sample
 * Playrate
+
+### Video Items
+
+* Video clips from DAWproject to Reaper, including simple warps
 
 ### Automation
 
@@ -140,6 +145,8 @@ Range markers are not supported.
 	* volume
 	* Panorama
 	* Mute
+* VST 2 parameter envelopes (both directions)
+* VST 3 parameter envelopes (both directions, when parameter IDs are present)
 
 ### Known Issues
 
@@ -148,9 +155,9 @@ Range markers are not supported.
 * Currently, the following features of the DAWproject format are not supported:
 	* Built-in devices.
 	* AU plugins.
-	* Video clips.
+	* Video clips from Reaper to DAWproject.
 	* Modulation envelope on Panorama on sends.
-	* VST parameter envelopes.
+	* Plug-in automation items, curved envelopes, and disabled envelopes. VST export supports normalized real-valued parameters with linear or hold points; beat-based VST automation with tempo changes is not exported. VST 3 export relies on Reaper resolving parameter IDs when the plug-in is available; verify the automation after opening the project, especially if a plug-in or parameter is missing.
 	* MIDI parameter envelopes.
 	* Complex routings (beyond normal sends).
 	* Continuous tempo changes.
