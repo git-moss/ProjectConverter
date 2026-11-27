@@ -158,7 +158,7 @@ Range markers are not supported.
 	* AU plugins.
 	* Video-specific edits from Reaper to DAWproject. Video source audio is exported without file metadata, which may not be accepted by every DAW; looping cannot be preserved without the source duration.
 	* Modulation envelope on Panorama on sends.
-	* Plug-in automation items, curved envelopes, and disabled envelopes. VST export supports normalized real-valued parameters with linear or hold points; beat-based VST automation with tempo changes is not exported. VST 3 export relies on Reaper resolving parameter IDs when the plug-in is available; verify the automation after opening the project, especially if a plug-in or parameter is missing.
+	* Plug-in automation items, curved envelopes, and disabled envelopes. VST export supports normalized real-valued parameters with linear or hold points; beat-based VST automation with tempo changes is not exported. When importing from Reaper, automation point positions are converted to beats; interpolation between points can change across tempo changes, and some DAWs may not correctly import tempo automation. VST 3 export relies on Reaper resolving parameter IDs when the plug-in is available; verify the automation after opening the project, especially if a plug-in or parameter is missing.
 	* MIDI parameter envelopes.
 	* Complex routings (beyond normal sends).
 	* Continuous tempo changes.

@@ -200,7 +200,9 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
             convertTransport (project, rootChunk);
 
             final Map<String, File> mediaFilesMap = new HashMap<> ();
-            beatsAndTime.tempoEnvelope = this.convertMaster (dawProject, mediaFilesMap, rootChunk, structure, beatsAndTime);
+            final Points tempoEnvelope = convertTempoAutomation (dawProject, rootChunk);
+            beatsAndTime.tempoEnvelope = toTempoChangeList (tempoEnvelope, dawProject.getTempo ());
+            this.convertMaster (dawProject, mediaFilesMap, rootChunk, structure, beatsAndTime);
 
             this.convertTracks (dawProject, mediaFilesMap, rootChunk, sourceFile.getParentFile (), structure, beatsAndTime);
             convertMarkers (dawProject, rootChunk, beatsAndTime);
@@ -439,9 +441,8 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @param rootChunk The root chunk
      * @param folderStructure The folder structure
      * @param beatsAndTime The beats and/or time conversion information
-     * @return The list with all tempo changes
      */
-    private final List<TempoChange> convertMaster (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk rootChunk, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime)
+    private void convertMaster (final DawProjectContainer dawProject, final Map<String, File> mediaFilesMap, final Chunk rootChunk, final FolderStructure folderStructure, final BeatsAndTime beatsAndTime)
     {
         final Project project = dawProject.getProject ();
 
@@ -484,13 +485,10 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
         createTrackLanes (project, masterTrack, folderStructure);
         // Convert all FX devices
-        channel.devices = this.convertDevices (mediaFilesMap, masterTrack, rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN, folderStructure);
-        final Points tempoEnvelope = convertTempoAutomation (dawProject, rootChunk);
+        channel.devices = this.convertDevices (mediaFilesMap, masterTrack, rootChunk, ReaperTags.MASTER_CHUNK_FXCHAIN, folderStructure, beatsAndTime.tempoEnvelope);
 
         convertAutomation (masterTrack, rootChunk, ReaperTags.MASTER_VOLUME_ENVELOPE, channel.volume, true, folderStructure, beatsAndTime);
         convertAutomation (masterTrack, rootChunk, ReaperTags.MASTER_PANORAMA_ENVELOPE, channel.pan, true, folderStructure, beatsAndTime);
-
-        return toTempoChangeList (tempoEnvelope, dawProject.getTempo ());
     }
 
 
@@ -633,7 +631,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         final Lanes trackLanes = createTrackLanes (dawProject.getProject (), track, folderStructure);
 
         // Convert all FX devices
-        channel.devices = this.convertDevices (mediaFilesMap, track, trackChunk, ReaperTags.CHUNK_FXCHAIN, folderStructure);
+        channel.devices = this.convertDevices (mediaFilesMap, track, trackChunk, ReaperTags.CHUNK_FXCHAIN, folderStructure, beatsAndTime.tempoEnvelope);
 
         final Set<ContentType> trackTypes = this.convertClips (dawProject, mediaFilesMap, trackLanes, trackChunk, sourcePath, beatsAndTime);
 
@@ -776,7 +774,6 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
         final Points signatureEnvelope = new Points ();
         signatureEnvelope.target.parameter = project.transport.timeSignature;
 
-        Interpolation previousInterpolation = Interpolation.HOLD;
         for (final Node pointNode: envelopeChunk.getChildNodes (ReaperTags.ENVELOPE_POINT))
         {
             final RealPoint point = new RealPoint ();
@@ -784,8 +781,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
             // Time envelope must be kept in seconds!
             point.time = Double.valueOf (timeValue);
             point.value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
-            point.interpolation = previousInterpolation;
-            previousInterpolation = getIntParam (pointNode, 2, 1) == 0 ? Interpolation.LINEAR : Interpolation.HOLD;
+            point.interpolation = getIntParam (pointNode, 2, 1) == 0 ? Interpolation.LINEAR : Interpolation.HOLD;
             tempoEnvelope.points.add (point);
 
             final int signature = getIntParam (pointNode, 3, 0);
@@ -821,10 +817,11 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
      * @param track The track
      * @param trackChunk The track chunk
      * @param chunkName The name of the FX list chunk
-     * @return The list with the parsed devices
      * @param folderStructure The folder structure
+     * @param tempoEnvelope The project tempo map
+     * @return The list with the parsed devices
      */
-    private List<Device> convertDevices (final Map<String, File> mediaFilesMap, final Track track, final Chunk trackChunk, final String chunkName, final FolderStructure folderStructure)
+    private List<Device> convertDevices (final Map<String, File> mediaFilesMap, final Track track, final Chunk trackChunk, final String chunkName, final FolderStructure folderStructure, final List<TempoChange> tempoEnvelope)
     {
         final List<Device> devices = new ArrayList<> ();
 
@@ -857,7 +854,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
                         devices.add (device);
                 }
                 else if (ReaperTags.FXCHAIN_PARAMETER_ENVELOPE.equals (nodeName) && node instanceof final Chunk paramEnvChunk && device != null)
-                    this.createAutomationParameters (track, device, paramEnvChunk, folderStructure);
+                    this.createAutomationParameters (track, device, paramEnvChunk, folderStructure, tempoEnvelope);
             }
         }
 
@@ -865,7 +862,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
     }
 
 
-    private void createAutomationParameters (final Track track, final Device device, final Chunk paramEnvChunk, final FolderStructure folderStructure)
+    private void createAutomationParameters (final Track track, final Device device, final Chunk paramEnvChunk, final FolderStructure folderStructure, final List<TempoChange> tempoEnvelope)
     {
         final String identifier = getParam (paramEnvChunk, 0, "");
         final String [] idParts = identifier.split (":", 2);
@@ -931,6 +928,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
 
         final Points envelope = new Points ();
         lanes.lanes.add (envelope);
+        envelope.timeUnit = TimeUnit.BEATS;
         envelope.unit = Unit.LINEAR;
         envelope.target.parameter = param;
 
@@ -941,7 +939,7 @@ public class ReaperDetector extends AbstractCoreTask implements ISourceFormat
             if (shape == -1)
                 shape = defaultShape;
             point.interpolation = shape == 0 ? Interpolation.LINEAR : Interpolation.HOLD;
-            point.time = Double.valueOf (getDoubleParam (pointNode, 0, 0));
+            point.time = Double.valueOf (TempoConverter.secondsToBeats (getDoubleParam (pointNode, 0, 0), tempoEnvelope));
             point.value = Double.valueOf (getDoubleParam (pointNode, 1, 0));
             envelope.points.add (point);
         }

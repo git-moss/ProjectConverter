@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -16,10 +17,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import javax.xml.parsers.DocumentBuilderFactory;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.w3c.dom.Element;
+import org.xml.sax.InputSource;
 
 import com.bitwig.dawproject.Arrangement;
 import com.bitwig.dawproject.Channel;
@@ -34,10 +39,13 @@ import com.bitwig.dawproject.device.Vst3Plugin;
 import com.bitwig.dawproject.timeline.Lanes;
 import com.bitwig.dawproject.timeline.Points;
 import com.bitwig.dawproject.timeline.RealPoint;
+import com.bitwig.dawproject.timeline.TimeUnit;
 
 import de.mossgrabers.projectconverter.INotifier;
 import de.mossgrabers.projectconverter.core.DawProjectContainer;
 import de.mossgrabers.projectconverter.core.IMediaFiles;
+import de.mossgrabers.projectconverter.core.TempoChange;
+import de.mossgrabers.projectconverter.format.dawproject.DawProjectCreator;
 import de.mossgrabers.projectconverter.format.reaper.model.Chunk;
 import de.mossgrabers.projectconverter.format.reaper.model.Node;
 import de.mossgrabers.projectconverter.format.reaper.model.ReaperProject;
@@ -75,7 +83,93 @@ class ReaperVstAutomationTest
             final Points trackPoints = (Points) trackLanes.lanes.stream ().filter (Points.class::isInstance).findFirst ().orElseThrow ();
             assertEquals (3, masterPoints.target.parameter.parameterID);
             assertEquals (7, trackPoints.target.parameter.parameterID);
+            assertEquals (TimeUnit.BEATS, masterPoints.timeUnit);
+            assertEquals (TimeUnit.BEATS, trackPoints.timeUnit);
+            assertEquals (2, masterPoints.points.get (0).time);
+            assertEquals (4, masterPoints.points.get (1).time);
+            assertEquals (2, trackPoints.points.get (0).time);
+            assertEquals (4, trackPoints.points.get (1).time);
             assertEquals (0.75, ((RealPoint) trackPoints.points.get (1)).value);
+
+            final Method toXML = DawProjectCreator.class.getDeclaredMethod ("toXML", Object.class);
+            toXML.setAccessible (true);
+            final String xml = (String) toXML.invoke (null, project.getProject ());
+            final var document = DocumentBuilderFactory.newInstance ().newDocumentBuilder ().parse (new InputSource (new StringReader (xml)));
+            final var envelopes = document.getElementsByTagName ("Points");
+            assertEquals (2, envelopes.getLength ());
+            for (int i = 0; i < envelopes.getLength (); i++)
+            {
+                final Element envelope = (Element) envelopes.item (i);
+                assertEquals ("beats", envelope.getAttribute ("timeUnit"));
+                final var points = envelope.getElementsByTagName ("RealPoint");
+                assertEquals (2, Double.parseDouble (((Element) points.item (0)).getAttribute ("time")));
+                assertEquals (4, Double.parseDouble (((Element) points.item (1)).getAttribute ("time")));
+            }
+        }
+        assertTrue (this.notifier.errors.isEmpty (), this.notifier.errors.toString ());
+    }
+
+
+    @Test
+    void convertsAutomationUsingProjectTempo (@TempDir final Path directory) throws Exception
+    {
+        final Chunk root = chunk ("REAPER_PROJECT", "0.1", "7.0");
+        root.addChildNode (node ("TEMPO", "90", "4", "4"));
+        final Chunk masterFx = chunk ("MASTERFXLIST");
+        root.addChildNode (masterFx);
+        addVstAndEnvelope (masterFx, 3);
+        final Path path = directory.resolve ("automation.rpp");
+        Files.writeString (path, ReaperProject.format (root));
+
+        try (final DawProjectContainer project = new ReaperDetector (this.notifier).read (path.toFile ()))
+        {
+            final Lanes master = (Lanes) project.getProject ().arrangement.lanes.lanes.get (0);
+            final Points points = (Points) master.lanes.get (0);
+            assertEquals (TimeUnit.BEATS, points.timeUnit);
+            assertEquals (1.5, points.points.get (0).time);
+            assertEquals (3, points.points.get (1).time);
+        }
+        assertTrue (this.notifier.errors.isEmpty (), this.notifier.errors.toString ());
+    }
+
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    void convertsMasterAndTrackAutomationUsingTempoChanges (final boolean ramp, @TempDir final Path directory) throws Exception
+    {
+        final Chunk root = chunk ("REAPER_PROJECT", "0.1", "7.0");
+        root.addChildNode (node ("TEMPO", "120", "4", "4"));
+        final Chunk tempo = chunk ("TEMPOENVEX");
+        tempo.addChildNode (node ("PT", "0", "120", ramp ? "0" : "1"));
+        tempo.addChildNode (node ("PT", "4", "60", "1"));
+        root.addChildNode (tempo);
+        final Chunk masterFx = chunk ("MASTERFXLIST");
+        root.addChildNode (masterFx);
+        addVstAndEnvelope (masterFx, 3);
+        final Chunk track = chunk ("TRACK");
+        root.addChildNode (track);
+        track.addChildNode (node ("NAME", "Track"));
+        final Chunk trackFx = chunk ("FXCHAIN");
+        track.addChildNode (trackFx);
+        addVstAndEnvelope (trackFx, 7);
+        for (final Chunk fx: List.of (masterFx, trackFx))
+            ((Chunk) fx.getChildNodes ("PARMENV").get (0)).addChildNode (node ("PT", "5", "0.5", "0"));
+
+        final Path path = directory.resolve ("automation.rpp");
+        Files.writeString (path, ReaperProject.format (root));
+        try (final DawProjectContainer project = new ReaperDetector (this.notifier).read (path.toFile ()))
+        {
+            final Points tempoPoints = project.getProject ().arrangement.tempoAutomation;
+            assertEquals (ramp ? Interpolation.LINEAR : Interpolation.HOLD, ((RealPoint) tempoPoints.points.get (0)).interpolation);
+            assertEquals (Interpolation.HOLD, ((RealPoint) tempoPoints.points.get (1)).interpolation);
+            for (final var trackLane: project.getProject ().arrangement.lanes.lanes)
+            {
+                final Points points = (Points) ((Lanes) trackLane).lanes.stream ().filter (Points.class::isInstance).findFirst ().orElseThrow ();
+                assertEquals (TimeUnit.BEATS, points.timeUnit);
+                assertEquals (ramp ? 1.875 : 2, points.points.get (0).time, 1e-9);
+                assertEquals (ramp ? 3.5 : 4, points.points.get (1).time, 1e-9);
+                assertEquals (ramp ? 7 : 9, points.points.get (2).time, 1e-9);
+            }
         }
         assertTrue (this.notifier.errors.isEmpty (), this.notifier.errors.toString ());
     }
@@ -111,7 +205,7 @@ class ReaperVstAutomationTest
             assertTrue (identifier.startsWith ("2147483647:"));
             importEnvelope (new Track (), imported, lanes, envelope);
             final Points result = (Points) lanes.lanes.get (lanes.lanes.size () - 1);
-            assertEquals (Double.valueOf (2), result.points.get (0).time);
+            assertEquals (Double.valueOf (4), result.points.get (0).time);
             assertEquals (Interpolation.HOLD, ((RealPoint) result.points.get (1)).interpolation);
         }
         assertEquals (List.of (Integer.MIN_VALUE, -1611133501, 3029309, 0), imported.automatedParameters.stream ().map (p -> p.parameterID).toList ());
@@ -147,7 +241,7 @@ class ReaperVstAutomationTest
         assertEquals (3029309, plugin.automatedParameters.get (0).parameterID);
         final Points points = (Points) lanes.lanes.get (0);
         assertSame (plugin.automatedParameters.get (0), points.target.parameter);
-        assertEquals (1.25, points.points.get (0).time);
+        assertEquals (2.5, points.points.get (0).time);
         assertEquals (Interpolation.LINEAR, ((RealPoint) points.points.get (0)).interpolation);
         assertEquals (Interpolation.HOLD, ((RealPoint) points.points.get (1)).interpolation);
         assertTrue (this.notifier.errors.isEmpty ());
@@ -207,7 +301,7 @@ class ReaperVstAutomationTest
         importEnvelope (new Track (), imported, lanes, result);
         final Points roundTrip = (Points) lanes.lanes.get (0);
         assertEquals (7, imported.automatedParameters.get (0).parameterID);
-        assertEquals (1.0, roundTrip.points.get (0).time);
+        assertEquals (2.0, roundTrip.points.get (0).time);
         assertEquals (Interpolation.HOLD, ((RealPoint) roundTrip.points.get (1)).interpolation);
     }
 
@@ -302,9 +396,9 @@ class ReaperVstAutomationTest
         @SuppressWarnings("unchecked")
         final Map<Track, Lanes> tracks = (Map<Track, Lanes>) field.get (structure);
         tracks.put (track, lanes);
-        final Method method = ReaperDetector.class.getDeclaredMethod ("createAutomationParameters", Track.class, Device.class, Chunk.class, structureType);
+        final Method method = ReaperDetector.class.getDeclaredMethod ("createAutomationParameters", Track.class, Device.class, Chunk.class, structureType, List.class);
         method.setAccessible (true);
-        method.invoke (new ReaperDetector (this.notifier), track, plugin, envelope, structure);
+        method.invoke (new ReaperDetector (this.notifier), track, plugin, envelope, structure, List.of (new TempoChange (0, 120, false)));
     }
 
 
